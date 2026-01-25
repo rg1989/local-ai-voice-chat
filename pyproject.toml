@@ -1,0 +1,61 @@
+[project]
+name = "local-voice-chatbot"
+version = "0.1.0"
+description = "A fully local voice chatbot for Mac using Parakeet STT, Qwen3 LLM, and Kokoro TTS"
+readme = "README.md"
+requires-python = ">=3.10,<3.14"
+dependencies = [
+    # Audio I/O
+    "sounddevice>=0.5.0",
+    "numpy>=2.0.0",
+    "scipy>=1.14.0",
+    
+    # VAD - loaded via torch.hub, no pip package needed
+    "torch>=2.4.0",
+    "torchaudio>=2.4.0",
+    
+    # STT - using faster-whisper (CTranslate2 backend, no numba dependency)
+    "faster-whisper>=1.1.0",
+    
+    # LLM client
+    "httpx>=0.27.0",
+    
+    # TTS
+    "kokoro>=0.9.0",
+    
+    # Web interface
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "websockets>=14.0",
+    "python-multipart>=0.0.18",
+    
+    # Utilities
+    "pydantic>=2.10.0",
+    "pydantic-settings>=2.7.0",
+    "rich>=13.9.0",
+    "pip>=24.0",  # Required for spaCy model downloads
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "ruff>=0.1.0",
+]
+
+[project.scripts]
+voice-chat = "src.main:main"
+voice-chat-web = "src.interfaces.web:run_server"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]

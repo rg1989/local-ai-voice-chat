@@ -62,7 +62,7 @@ class LLMSettings(BaseSettings):
     max_tokens: int = Field(default=512, description="Maximum tokens to generate")
     system_prompt: str = Field(
         default=(
-            "You are a helpful, friendly voice assistant. Keep responses concise and "
+            "/no_think You are a helpful, friendly voice assistant. Keep responses concise and "
             "conversational since they will be spoken aloud. Aim for 1-3 sentences "
             "unless more detail is specifically requested."
         ),

@@ -102,6 +102,7 @@ class VoiceChatSession:
 
         self._audio_buffer: list[np.ndarray] = []
         self._is_speaking = False
+        self._cancel_requested = False
 
     async def send_status(self, status: str, data: Optional[dict] = None) -> None:
         """Send status update to client."""
@@ -184,20 +185,36 @@ class VoiceChatSession:
 
         self.sentencizer.reset()
         full_response = []
+        cancelled = False
 
         # Stream response
         async for token in await self.llm.chat_async(result.text, stream=True):
+            # Check for cancellation
+            if self._cancel_requested:
+                self._cancel_requested = False
+                cancelled = True
+                break
+                
             await self.send_response_token(token)
             full_response.append(token)
 
             # Check for complete sentence
             sentence = self.sentencizer.add_token(token)
             if sentence:
+                if self._cancel_requested:
+                    self._cancel_requested = False
+                    cancelled = True
+                    break
                 await self.synthesize_and_send(sentence)
+
+        if cancelled:
+            await self.send_status("stopped")
+            await self.send_status("listening")
+            return
 
         # Flush remaining
         remaining = self.sentencizer.flush()
-        if remaining:
+        if remaining and not self._cancel_requested:
             await self.synthesize_and_send(remaining)
 
         await self.send_response_end()
@@ -217,22 +234,42 @@ class VoiceChatSession:
         await self.send_status("thinking")
 
         self.sentencizer.reset()
+        cancelled = False
 
         # Stream response
         async for token in await self.llm.chat_async(text, stream=True):
+            # Check for cancellation
+            if self._cancel_requested:
+                self._cancel_requested = False
+                cancelled = True
+                break
+                
             await self.send_response_token(token)
 
             sentence = self.sentencizer.add_token(token)
             if sentence:
+                if self._cancel_requested:
+                    self._cancel_requested = False
+                    cancelled = True
+                    break
                 await self.synthesize_and_send(sentence)
 
+        if cancelled:
+            await self.send_status("stopped")
+            await self.send_status("listening")
+            return
+
         remaining = self.sentencizer.flush()
-        if remaining:
+        if remaining and not self._cancel_requested:
             await self.synthesize_and_send(remaining)
 
         await self.send_response_end()
         # Send "listening" to resume audio streaming
         await self.send_status("listening")
+
+    def request_cancel(self) -> None:
+        """Request cancellation of current processing."""
+        self._cancel_requested = True
 
     def cleanup(self) -> None:
         """Cleanup resources."""
@@ -251,6 +288,10 @@ async def websocket_chat(websocket: WebSocket):
         while True:
             # Receive message
             message = await websocket.receive()
+
+            # Check for disconnect
+            if message.get("type") == "websocket.disconnect":
+                break
 
             if "bytes" in message:
                 # Audio data
@@ -275,8 +316,15 @@ async def websocket_chat(websocket: WebSocket):
                         session.tts.set_voice(voice)
                         await session.send_status("voice_changed", {"voice": voice})
 
+                elif msg_type == "stop":
+                    session.request_cancel()
+
     except WebSocketDisconnect:
         pass
+    except RuntimeError as e:
+        # Handle "Cannot call receive once disconnect received" error
+        if "disconnect" not in str(e).lower():
+            raise
     finally:
         manager.disconnect(websocket)
         session.cleanup()

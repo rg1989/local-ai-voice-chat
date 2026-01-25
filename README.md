@@ -25,7 +25,22 @@ No cloud services, no API keys, complete privacy.
 
 ## Quick Start
 
-### 1. Run the setup script
+### Option A: One-Command Start (Recommended)
+
+```bash
+./start.sh
+```
+
+This single script will:
+- Set up Python environment (if needed)
+- Install frontend dependencies (if needed)
+- Check/start Ollama and download models
+- Start both backend and frontend servers
+- Display the URL to open in your browser
+
+### Option B: Manual Setup
+
+#### 1. Run the setup script
 
 ```bash
 chmod +x scripts/setup_models.sh
@@ -38,13 +53,13 @@ This will:
 - Download the Qwen3-8B model
 - Set up Python environment with uv
 
-### 2. Activate the environment
+#### 2. Activate the environment
 
 ```bash
 source .venv/bin/activate
 ```
 
-### 3. Start chatting
+#### 3. Start chatting
 
 ```bash
 # Voice mode (requires microphone)
@@ -53,8 +68,16 @@ python -m src.main
 # Text mode (no microphone needed)
 python -m src.main --text
 
-# Web interface
+# Web interface (legacy HTML)
 python -m src.main --web
+
+# Web interface (React frontend - recommended)
+# Terminal 1: Start the backend
+python -m src.main --web
+
+# Terminal 2: Start the frontend
+cd frontend && npm run dev
+# Then open http://localhost:5173
 ```
 
 ## Manual Installation
@@ -249,35 +272,71 @@ For 8GB Macs, use `llama3.2:3b` instead.
 
 ```
 local-voice-chatbot/
-├── src/
-│   ├── main.py           # Entry point
-│   ├── config.py         # Settings
+├── src/                      # Python backend
+│   ├── main.py               # Entry point
+│   ├── config.py             # Settings
 │   ├── pipeline/
-│   │   ├── vad.py        # Voice activity detection
-│   │   ├── stt.py        # Speech-to-text
-│   │   ├── llm.py        # LLM client
-│   │   ├── tts.py        # Text-to-speech
+│   │   ├── vad.py            # Voice activity detection
+│   │   ├── stt.py            # Speech-to-text
+│   │   ├── llm.py            # LLM client
+│   │   ├── tts.py            # Text-to-speech
 │   │   └── sentencizer.py
 │   ├── audio/
-│   │   ├── capture.py    # Microphone input
-│   │   └── playback.py   # Speaker output
+│   │   ├── capture.py        # Microphone input
+│   │   └── playback.py       # Speaker output
 │   └── interfaces/
-│       ├── cli.py        # Terminal interface
-│       └── web.py        # Web interface
+│       ├── cli.py            # Terminal interface
+│       └── web.py            # Web API + WebSocket
+├── frontend/                 # React frontend
+│   ├── src/
+│   │   ├── App.tsx           # Main application
+│   │   ├── components/       # UI components
+│   │   ├── hooks/            # Custom React hooks
+│   │   ├── types/            # TypeScript types
+│   │   └── utils/            # Utility functions
+│   ├── package.json
+│   └── vite.config.ts
 ├── web/
-│   └── index.html        # Web UI
+│   └── index.html            # Legacy Web UI
 ├── scripts/
-│   └── setup_models.sh   # Setup script
+│   └── setup_models.sh       # Setup script
 ├── pyproject.toml
 └── README.md
 ```
 
-### Running in development mode
+### Running in Development Mode
 
+**Backend only (legacy UI):**
 ```bash
-# Web interface with auto-reload
 python -m src.main --web --reload
 ```
+
+**Full stack (React frontend - recommended):**
+```bash
+# Terminal 1: Backend API server
+python -m src.main --web
+
+# Terminal 2: Frontend dev server with hot reload
+cd frontend
+npm install  # First time only
+npm run dev
+```
+
+The frontend runs on `http://localhost:5173` and proxies API/WebSocket requests to the backend on port 8000.
+
+### Frontend Development
+
+The React frontend uses:
+- **Vite** - Fast build tool with hot reload
+- **TypeScript** - Type-safe JavaScript
+- **Tailwind CSS** - Utility-first styling
+
+Key features:
+- Modern dark theme UI
+- Real-time audio streaming via WebSocket
+- Stop button to cancel ongoing responses
+- Visual status indicators for each state
+- Responsive design for all screen sizes
 
 ## License
 
@@ -288,4 +347,4 @@ MIT License - feel free to use and modify for your projects.
 - [Ollama](https://ollama.ai/) for easy local LLM deployment
 - [MLX](https://github.com/ml-explore/mlx) for Apple Silicon optimization
 - [Kokoro](https://github.com/hexgrad/kokoro) for amazing TTS
-- [Silero VAD](https://github.com/snakers4/silero-vad) for voice detection# local-ai-voice-chat
+- [Silero VAD](https://github.com/snakers4/silero-vad) for voice detection

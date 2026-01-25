@@ -1,0 +1,109 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { WSMessage } from '../types';
+
+interface UseWebSocketOptions {
+  onMessage: (message: WSMessage) => void;
+  onOpen?: () => void;
+  onClose?: () => void;
+  onError?: (error: Event) => void;
+}
+
+export function useWebSocket({ onMessage, onOpen, onClose, onError }: UseWebSocketOptions) {
+  const [isConnected, setIsConnected] = useState(false);
+  const wsRef = useRef<WebSocket | null>(null);
+  const reconnectTimeoutRef = useRef<number | null>(null);
+
+  const connect = useCallback(() => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) return;
+
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const ws = new WebSocket(`${protocol}//${window.location.host}/ws/chat`);
+
+    ws.onopen = () => {
+      console.log('WebSocket connected');
+      setIsConnected(true);
+      onOpen?.();
+    };
+
+    ws.onclose = () => {
+      console.log('WebSocket disconnected');
+      setIsConnected(false);
+      onClose?.();
+
+      // Attempt reconnection after 3 seconds
+      reconnectTimeoutRef.current = window.setTimeout(() => {
+        connect();
+      }, 3000);
+    };
+
+    ws.onerror = (error) => {
+      console.error('WebSocket error:', error);
+      onError?.(error);
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        const message = JSON.parse(event.data) as WSMessage;
+        onMessage(message);
+      } catch (error) {
+        console.error('Failed to parse WebSocket message:', error);
+      }
+    };
+
+    wsRef.current = ws;
+  }, [onMessage, onOpen, onClose, onError]);
+
+  const disconnect = useCallback(() => {
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
+    if (wsRef.current) {
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+  }, []);
+
+  const sendJson = useCallback((data: Record<string, unknown>) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify(data));
+    }
+  }, []);
+
+  const sendBinary = useCallback((data: ArrayBuffer) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(data);
+    }
+  }, []);
+
+  const sendTextMessage = useCallback((text: string) => {
+    sendJson({ type: 'text', text });
+  }, [sendJson]);
+
+  const sendStop = useCallback(() => {
+    sendJson({ type: 'stop' });
+  }, [sendJson]);
+
+  const sendClearHistory = useCallback(() => {
+    sendJson({ type: 'clear_history' });
+  }, [sendJson]);
+
+  const sendSetVoice = useCallback((voice: string) => {
+    sendJson({ type: 'set_voice', voice });
+  }, [sendJson]);
+
+  useEffect(() => {
+    connect();
+    return () => disconnect();
+  }, [connect, disconnect]);
+
+  return {
+    isConnected,
+    sendJson,
+    sendBinary,
+    sendTextMessage,
+    sendStop,
+    sendClearHistory,
+    sendSetVoice,
+  };
+}

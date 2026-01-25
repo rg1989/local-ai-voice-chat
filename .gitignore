@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.venv/
+venv/
+.env
+*.egg-info/
+*.egg
+.eggs/
+build/
+develop-eggs/
+.installed.cfg
+
+# Node/Frontend
+node_modules/
+dist/
+.vite/
+*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+
+# Project-specific
+*.log
+.coverage
+htmlcov/
+.pytest_cache/
+.mypy_cache/

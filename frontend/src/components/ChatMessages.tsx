@@ -405,11 +405,17 @@ export const ChatMessages = memo(function ChatMessages({
               </button>
               
               <h2 className="text-xl font-semibold text-slate-200 mb-3">
-                {isListening ? 'Listening...' : 'Start Listening'}
+                {isListening 
+                  ? (wakeWordEnabled && wakeWordStatus?.state === 'listening'
+                      ? `Waiting for "${wakeWordStatus.displayName}"...`
+                      : 'Listening...')
+                  : 'Start Listening'}
               </h2>
               <p className="text-slate-400 text-sm max-w-md leading-relaxed">
                 {isListening 
-                  ? 'Speak now. The assistant will respond when you pause.'
+                  ? (wakeWordEnabled && wakeWordStatus?.state === 'listening'
+                      ? `Say "${wakeWordStatus.displayName}" to start speaking with the assistant.`
+                      : 'Speak now. The assistant will respond when you pause.')
                   : isDisabled
                     ? 'Ollama is not available. Please check the error message above.'
                     : 'Click the microphone above to start speaking, or type a message below.'

@@ -815,6 +815,7 @@ function App() {
           wakeWordEnabled={wakeWordSettings.enabled}
           wakeWordStatus={wakeWordStatus}
           onDisableWakeWord={handleDisableWakeWord}
+          appState={state}
         />
 
         {/* Ollama error banner */}

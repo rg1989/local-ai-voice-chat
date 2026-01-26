@@ -1,4 +1,4 @@
-import { ConversationSummary, MemoryUsage } from '../types';
+import { ConversationSummary, MemoryUsage, AppState } from '../types';
 import { MemoryIndicator } from './MemoryIndicator';
 
 interface WakeWordStatus {
@@ -15,6 +15,7 @@ interface ChatHeaderProps {
   wakeWordEnabled?: boolean;
   wakeWordStatus?: WakeWordStatus | null;
   onDisableWakeWord?: () => void;
+  appState?: AppState;
 }
 
 // Chat bubble icon (matches sidebar)
@@ -72,7 +73,30 @@ export function ChatHeader({
   wakeWordEnabled = false,
   wakeWordStatus = null,
   onDisableWakeWord,
+  appState,
 }: ChatHeaderProps) {
+  // Determine what text to show for wake word indicator based on app state
+  const getWakeWordText = () => {
+    if (wakeWordStatus?.state !== 'active') {
+      return wakeWordStatus?.displayName || 'Wake Word';
+    }
+    // Wake word is active - show status based on app state
+    switch (appState) {
+      case AppState.TRANSCRIBING:
+        return 'Transcribing...';
+      case AppState.THINKING:
+        return 'Thinking...';
+      case AppState.SPEAKING:
+        return 'Speaking...';
+      default:
+        return 'Listening...';
+    }
+  };
+
+  // Determine if we're in a processing state (not actively listening for input)
+  const isProcessing = appState === AppState.TRANSCRIBING || 
+                       appState === AppState.THINKING || 
+                       appState === AppState.SPEAKING;
   return (
     <header className="bg-[#1e2227] border-b border-slate-700/50 px-6 py-4">
       <div className="flex items-center justify-between">
@@ -100,27 +124,31 @@ export function ChatHeader({
           {wakeWordEnabled && (
             <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg ${
               wakeWordStatus?.state === 'active' 
-                ? 'bg-emerald-600/20 text-emerald-400' 
-                : 'bg-violet-600/20 text-violet-400'
+                ? isProcessing 
+                  ? 'bg-amber-600/20 text-amber-400'  // Processing state - amber
+                  : 'bg-emerald-600/20 text-emerald-400'  // Active/listening - green
+                : 'bg-violet-600/20 text-violet-400'  // Waiting for wake word - violet
             }`}>
               {/* Pulsing indicator */}
               <span className="relative flex h-2 w-2">
                 <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
-                  wakeWordStatus?.state === 'active' ? 'bg-emerald-400' : 'bg-violet-400'
+                  wakeWordStatus?.state === 'active' 
+                    ? isProcessing ? 'bg-amber-400' : 'bg-emerald-400' 
+                    : 'bg-violet-400'
                 }`}></span>
                 <span className={`relative inline-flex rounded-full h-2 w-2 ${
-                  wakeWordStatus?.state === 'active' ? 'bg-emerald-500' : 'bg-violet-500'
+                  wakeWordStatus?.state === 'active' 
+                    ? isProcessing ? 'bg-amber-500' : 'bg-emerald-500' 
+                    : 'bg-violet-500'
                 }`}></span>
               </span>
               
               {/* Microphone icon */}
               <MicrophoneIcon />
               
-              {/* Wake word name */}
+              {/* Wake word status text */}
               <span className="text-xs font-medium">
-                {wakeWordStatus?.state === 'active' 
-                  ? 'Listening...' 
-                  : wakeWordStatus?.displayName || 'Wake Word'}
+                {getWakeWordText()}
               </span>
               
               {/* Disable button */}

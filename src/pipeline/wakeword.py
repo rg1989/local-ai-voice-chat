@@ -71,6 +71,9 @@ class WakeWordDetector:
         self._active_start_time: float = 0
         self._is_speaking = False  # For echo cancellation
         self._is_processing = False  # For preventing timeout during AI response
+        self._tts_end_time: float = 0  # When cooldown started, for post-response cooldown
+        self._post_tts_cooldown_ms: float = 1000  # Cooldown period after returning to listening (1 second)
+        self._cooldown_log_count: int = 0  # For limiting cooldown log spam
 
         # Callbacks
         self._on_wake_detected: Optional[Callable[[], None]] = None
@@ -158,6 +161,26 @@ class WakeWordDetector:
                 confidence=0.0,
                 model_name=self.model_name,
             )
+
+        # Post-response cooldown: skip detection briefly after returning to listening
+        # This allows residual audio/echo to clear out before detection resumes
+        if self._tts_end_time > 0:
+            time_since_cooldown_start = (time.time() - self._tts_end_time) * 1000  # ms
+            if time_since_cooldown_start < self._post_tts_cooldown_ms:
+                # Log first few skips during cooldown
+                self._cooldown_log_count += 1
+                if self._cooldown_log_count <= 3:
+                    print(f"[WAKEWORD] Cooldown active, skipping detection ({time_since_cooldown_start:.0f}ms / {self._post_tts_cooldown_ms}ms)")
+                return WakeWordResult(
+                    state=self._state,
+                    detected=False,
+                    confidence=0.0,
+                    model_name=self.model_name,
+                )
+            else:
+                # Cooldown expired, reset and resume detection
+                print(f"[WAKEWORD] Cooldown expired after {time_since_cooldown_start:.0f}ms, resuming detection")
+                self._tts_end_time = 0
 
         # Check for timeout if active (but not while processing AI response)
         if self._state == WakeWordState.ACTIVE and not self._is_processing:
@@ -275,6 +298,11 @@ class WakeWordDetector:
         """Return to listening state."""
         if self.enabled:
             self._state = WakeWordState.LISTENING
+            # Start cooldown when returning to listening state
+            # This prevents false wake word triggers from residual audio
+            self._tts_end_time = time.time()
+            self._cooldown_log_count = 0  # Reset for fresh logging
+            print(f"[WAKEWORD] Set listening, starting {self._post_tts_cooldown_ms}ms cooldown")
 
     def reset_timeout(self) -> None:
         """Reset the active timeout (e.g., when user is still speaking)."""
@@ -286,7 +314,15 @@ class WakeWordDetector:
         Args:
             is_speaking: True if TTS is currently playing
         """
+        was_speaking = self._is_speaking
         self._is_speaking = is_speaking
+        
+        # When TTS ends, reset the OpenWakeWord model's internal state
+        # This prevents false detections from stale accumulated audio
+        if was_speaking and not is_speaking:
+            if self._oww_model is not None:
+                print("[WAKEWORD] Resetting model state after TTS")
+                self._oww_model.reset()
 
     def set_processing(self, is_processing: bool) -> None:
         """Set processing state - prevents timeout during AI response.
@@ -369,6 +405,7 @@ class WakeWordDetector:
         self._active_start_time = 0
         self._is_speaking = False
         self._is_processing = False
+        self._tts_end_time = 0
         self._prediction_key = None
         self._debug_counter = 0
         if self._oww_model is not None:

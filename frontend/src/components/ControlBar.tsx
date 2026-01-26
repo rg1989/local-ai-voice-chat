@@ -38,16 +38,31 @@ export function ControlBar({
   return (
     <div className="border-t border-slate-700/50 px-6 py-3 bg-[#1e2227]">
       <div className="max-w-3xl mx-auto">
-        {/* Wake word status indicator */}
+        {/* Wake word status indicator - shows app state when processing */}
         {wakeWordEnabled && wakeWordStatus && (
           <div className={`mb-2 flex items-center justify-center gap-2 text-sm ${
-            wakeWordStatus.state === 'listening' 
-              ? 'text-violet-400' 
-              : wakeWordStatus.state === 'active' 
-                ? 'text-emerald-400'
-                : 'text-slate-400'
+            isProcessing
+              ? 'text-amber-400'
+              : wakeWordStatus.state === 'listening' 
+                ? 'text-violet-400' 
+                : wakeWordStatus.state === 'active' 
+                  ? 'text-emerald-400'
+                  : 'text-slate-400'
           }`}>
-            {wakeWordStatus.state === 'listening' ? (
+            {isProcessing ? (
+              // Show processing state (transcribing, thinking, speaking)
+              <>
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500"></span>
+                </span>
+                <span>
+                  {state === AppState.TRANSCRIBING && 'Transcribing...'}
+                  {state === AppState.THINKING && 'Thinking...'}
+                  {state === AppState.SPEAKING && 'Speaking...'}
+                </span>
+              </>
+            ) : wakeWordStatus.state === 'listening' ? (
               <>
                 <span className="relative flex h-2 w-2">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-violet-400 opacity-75"></span>

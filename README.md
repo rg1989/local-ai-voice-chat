@@ -29,7 +29,7 @@
 Local Voice Chatbot is a fully offline voice assistant that runs entirely on your Mac. It combines state-of-the-art open-source models to deliver a natural conversational experience without sending any data to the cloud.
 
 **Key Technologies:**
-- **Ollama + Qwen3-8B** — Conversational LLM for intelligent responses
+- **Ollama + Qwen 2.5/3** — Conversational LLM for intelligent responses
 - **MLX Whisper** — Fast speech-to-text optimized for Apple Silicon
 - **Kokoro** — Natural text-to-speech with multiple voice options
 - **Silero VAD** — Accurate voice activity detection
@@ -104,12 +104,37 @@ ollama serve
 ### Step 3: Download a Model
 
 ```bash
-# Recommended model (requires 16GB RAM)
+# Recommended model for general conversation (very fast, excellent performance)
+ollama pull qwen2.5:7b-instruct-q4_K_M
+
+# Recommended model for coding tasks (very fast, excellent for code)
+ollama pull qwen2.5-coder:latest
+
+# Smarter model (higher intelligence but slower performance)
 ollama pull qwen3:8b
 
 # Alternative for 8GB RAM systems
 ollama pull llama3.2:3b
 ```
+
+### Recommended Models
+
+| Model | Best For | Performance | Intelligence | RAM Required |
+|-------|----------|-------------|--------------|--------------|
+| `qwen2.5:7b-instruct-q4_K_M` | General conversation | Very fast | High | 8GB+ |
+| `qwen2.5-coder:latest` | Code generation & debugging | Very fast | High (code) | 8GB+ |
+| `qwen3:8b` | Complex reasoning | Moderate | Very high | 16GB+ |
+| `llama3.2:3b` | Limited RAM systems | Fast | Moderate | 8GB |
+
+**Model Selection Guide:**
+
+- **`qwen2.5:7b-instruct-q4_K_M`** — The best choice for everyday conversations. This quantized model offers an excellent balance of speed and quality, making it ideal for general-purpose chat. Highly responsive with natural dialogue capabilities.
+
+- **`qwen2.5-coder:latest`** — Optimized specifically for programming tasks. Use this when you need help with coding, debugging, code review, or technical explanations. Excellent at understanding and generating code across multiple languages.
+
+- **`qwen3:8b`** — The smartest option with superior reasoning capabilities. Choose this for complex tasks requiring deeper analysis, multi-step reasoning, or nuanced understanding. Trades some speed for higher intelligence.
+
+> **Tip:** You can install multiple models and switch between them in the app settings based on your current task. For most users, we recommend starting with `qwen2.5:7b-instruct-q4_K_M` for its excellent balance of speed and capability.
 
 ### Verify Installation
 
@@ -183,7 +208,10 @@ brew install portaudio ffmpeg ollama node
 ollama serve
 
 # Download the recommended model (in a new terminal)
-ollama pull qwen3:8b
+ollama pull qwen2.5:7b-instruct-q4_K_M
+
+# Optional: Also download the coding model
+ollama pull qwen2.5-coder:latest
 ```
 
 #### 3. Set Up Python Environment
@@ -312,7 +340,7 @@ cp .env.example .env
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `LLM_BASE_URL` | `http://localhost:11434` | Ollama API endpoint |
-| `LLM_MODEL_NAME` | `qwen3:8b` | Model to use for chat |
+| `LLM_MODEL_NAME` | `qwen2.5:7b-instruct-q4_K_M` | Model to use for chat (see [Recommended Models](#recommended-models)) |
 | `LLM_TEMPERATURE` | `0.7` | Response creativity (0.0-1.0) |
 | `LLM_MAX_TOKENS` | `512` | Maximum response length |
 
@@ -379,10 +407,23 @@ cp .env.example .env
 
 ### Alternative Models
 
-For systems with limited RAM:
+**Switching models based on task:**
 
 ```bash
-# 8GB RAM - Use smaller model
+# For general conversation (fast and capable)
+LLM_MODEL_NAME=qwen2.5:7b-instruct-q4_K_M
+
+# For coding tasks (optimized for code)
+LLM_MODEL_NAME=qwen2.5-coder:latest
+
+# For complex reasoning (smartest, but slower)
+LLM_MODEL_NAME=qwen3:8b
+```
+
+**For systems with limited RAM (8GB):**
+
+```bash
+# Use smaller model
 ollama pull llama3.2:3b
 
 # Update .env
@@ -402,7 +443,7 @@ LLM_MODEL_NAME=llama3.2:3b
                                                                    │
                                                                    ▼
                     ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-                    │   Speaker   │◀────│   Kokoro    │◀────│  Qwen3-8B   │
+                    │   Speaker   │◀────│   Kokoro    │◀────│ Qwen 2.5/3  │
                     └─────────────┘     │    TTS      │     │ via Ollama  │
                                         └─────────────┘     └─────────────┘
                                                ▲
@@ -490,8 +531,8 @@ curl http://localhost:11434/api/tags
 # List available models
 ollama list
 
-# Download the required model
-ollama pull qwen3:8b
+# Download the recommended model
+ollama pull qwen2.5:7b-instruct-q4_K_M
 ```
 
 ### Audio Issues
@@ -526,12 +567,13 @@ pip install --force-reinstall sounddevice
 Expected memory consumption:
 | Component | Memory Usage |
 |-----------|--------------|
+| Qwen 2.5 7B (quantized) | ~4GB |
 | Qwen3-8B (4-bit) | ~5GB |
 | Whisper | ~1.5GB |
 | Kokoro | ~100MB |
 | System overhead | ~2GB |
 
-For 8GB Macs, switch to `llama3.2:3b` model.
+For 8GB Macs, use `qwen2.5:7b-instruct-q4_K_M` (quantized, lower memory) or switch to `llama3.2:3b`.
 
 ### Frontend Issues
 

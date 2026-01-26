@@ -150,6 +150,7 @@ class Conversation:
     messages: list[StoredMessage] = field(default_factory=list)
     custom_rules: str = ""  # Per-chat custom instructions/rules
     interaction_logs: list[InteractionLog] = field(default_factory=list)  # Detailed debug logs
+    summary: str = ""  # Compressed summary of older conversation history
 
     @classmethod
     def create(cls, title: str = "New Conversation") -> "Conversation":
@@ -163,6 +164,7 @@ class Conversation:
             messages=[],
             custom_rules="",
             interaction_logs=[],
+            summary="",
         )
 
     def add_message(self, role: str, content: str) -> StoredMessage:
@@ -190,6 +192,7 @@ class Conversation:
             "messages": [m.to_dict() for m in self.messages],
             "custom_rules": self.custom_rules,
             "interaction_logs": [log.to_dict() for log in self.interaction_logs],
+            "summary": self.summary,
         }
 
     @classmethod
@@ -203,6 +206,7 @@ class Conversation:
             messages=[StoredMessage.from_dict(m) for m in data.get("messages", [])],
             custom_rules=data.get("custom_rules", ""),
             interaction_logs=[InteractionLog.from_dict(log) for log in data.get("interaction_logs", [])],
+            summary=data.get("summary", ""),
         )
     
     def add_interaction_log(self, log: "InteractionLog") -> None:
@@ -330,12 +334,13 @@ class ConversationStorage:
         return message
 
     def clear_messages(self, conversation_id: str) -> bool:
-        """Clear all messages from a conversation."""
+        """Clear all messages and summary from a conversation."""
         conversation = self.load(conversation_id)
         if conversation is None:
             return False
 
         conversation.messages = []
+        conversation.summary = ""  # Also clear the summary
         conversation.updated_at = datetime.now().isoformat()
         self.save(conversation)
         return True
@@ -372,6 +377,39 @@ class ConversationStorage:
         if conversation is None:
             return None
         return conversation.custom_rules
+
+    def update_summary(self, conversation_id: str, summary: str) -> bool:
+        """Update the conversation summary (compressed history).
+        
+        Args:
+            conversation_id: The conversation ID
+            summary: The new summary text
+            
+        Returns:
+            True if successful, False if conversation not found
+        """
+        conversation = self.load(conversation_id)
+        if conversation is None:
+            return False
+
+        conversation.summary = summary
+        conversation.updated_at = datetime.now().isoformat()
+        self.save(conversation)
+        return True
+
+    def get_summary(self, conversation_id: str) -> Optional[str]:
+        """Get the conversation summary.
+        
+        Args:
+            conversation_id: The conversation ID
+            
+        Returns:
+            Summary string or None if conversation not found
+        """
+        conversation = self.load(conversation_id)
+        if conversation is None:
+            return None
+        return conversation.summary
 
     def add_interaction_log(self, conversation_id: str, log: InteractionLog) -> bool:
         """Add an interaction log to a conversation.

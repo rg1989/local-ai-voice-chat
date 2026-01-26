@@ -260,20 +260,26 @@ class VoiceChatSession:
                     elif msg.role == "assistant":
                         self.llm.history.add_assistant_message(msg.content)
                 
+                # Load conversation summary if present (compressed history)
+                if conversation.summary:
+                    self.llm.history.summary = conversation.summary
+                    print(f"[CONTEXT] Loaded summary ({len(conversation.summary)} chars) for conversation {self.conversation_id[:8]}...")
+                
                 # Load custom rules for this conversation
                 self.llm.set_custom_rules(conversation.custom_rules)
                 
                 # Update token estimate based on loaded history
                 self.llm.update_token_estimate_from_history()
         else:
-            # New conversation - reset token count and custom rules
+            # New conversation - reset token count, custom rules, and summary
             self.llm._last_prompt_tokens = 0
             self.llm.set_custom_rules("")
+            self.llm.history.summary = ""
 
     def set_conversation(self, conversation_id: str) -> None:
         """Switch to a different conversation."""
         self.conversation_id = conversation_id
-        self.llm.clear_history()
+        self.llm.clear_history()  # This also clears the summary
         self.llm.set_custom_rules("")  # Reset before loading
         self._load_conversation_history()
 
@@ -288,6 +294,12 @@ class VoiceChatSession:
         """Save a message to the current conversation."""
         if self.conversation_id and content.strip():
             conversation_storage.add_message(self.conversation_id, role, content)
+
+    def _save_summary_to_storage(self) -> None:
+        """Save the current LLM history summary to conversation storage."""
+        if self.conversation_id and self.llm.history.summary:
+            conversation_storage.update_summary(self.conversation_id, self.llm.history.summary)
+            print(f"[CONTEXT] Saved summary to storage for conversation {self.conversation_id[:8]}...")
 
     def _save_interaction_log(self, log: InteractionLog) -> None:
         """Save an interaction log to the current conversation."""
@@ -477,6 +489,12 @@ class VoiceChatSession:
             log.tts_enabled = self._tts_enabled
             log.tts_voice = self.tts.voice
             
+            # Check if context compression is needed before LLM call
+            compressed = await self.llm.compress_if_needed(threshold_percent=70)
+            if compressed:
+                # Save the updated summary to storage
+                self._save_summary_to_storage()
+            
             # Get LLM response
             print(f"[DEBUG] Starting LLM call with model: {self.llm.model_name}")
             print(f"[DEBUG] User message being sent to LLM: '{transcribed_text}'")
@@ -655,6 +673,12 @@ class VoiceChatSession:
             
             # Save user message to conversation
             self._save_message("user", text)
+            
+            # Check if context compression is needed before LLM call
+            compressed = await self.llm.compress_if_needed(threshold_percent=70)
+            if compressed:
+                # Save the updated summary to storage
+                self._save_summary_to_storage()
             
             # Log LLM details BEFORE the call
             log.llm_model = self.llm.model_name

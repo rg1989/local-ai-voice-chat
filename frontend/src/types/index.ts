@@ -72,6 +72,15 @@ export interface WakeWordSettings {
   ready?: boolean; // True when backend model is loaded and ready
 }
 
+// Sound settings
+export interface SoundSettings {
+  enabled: boolean;
+  wakeSound: string;      // sound id or 'none'
+  messageSound: string;   // sound id or 'none'
+  thinkingSound: string;  // sound id or 'none'
+  volume: number;         // 0.0 to 1.0
+}
+
 // Memory usage tracking
 export interface MemoryUsage {
   used_tokens: number;

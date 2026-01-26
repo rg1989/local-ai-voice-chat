@@ -20,7 +20,7 @@ function CloseIcon() {
 export function ChatSettingsModal({
   isOpen,
   onClose,
-  conversationId,
+  conversationId: _conversationId,
   currentRules,
   onSave,
 }: ChatSettingsModalProps) {

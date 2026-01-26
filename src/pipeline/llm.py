@@ -25,6 +25,7 @@ class ChatHistory:
 
     messages: list[Message] = field(default_factory=list)
     max_messages: int = 20  # Keep last N messages
+    summary: str = ""  # Compressed history of earlier messages
 
     def add_user_message(self, content: str) -> None:
         """Add a user message."""
@@ -43,12 +44,27 @@ class ChatHistory:
             self.messages = self.messages[-self.max_messages :]
 
     def to_list(self) -> list[dict]:
-        """Convert to list of dicts for API."""
-        return [{"role": m.role, "content": m.content} for m in self.messages]
+        """Convert to list of dicts for API.
+        
+        If a summary exists, prepend it as context before the messages.
+        """
+        result = []
+        
+        # Prepend summary as context if available
+        if self.summary:
+            result.append({
+                "role": "system",
+                "content": f"[Previous conversation summary]: {self.summary}"
+            })
+        
+        # Add all messages
+        result.extend([{"role": m.role, "content": m.content} for m in self.messages])
+        return result
 
     def clear(self) -> None:
-        """Clear all messages."""
+        """Clear all messages and summary."""
         self.messages = []
+        self.summary = ""
 
 
 class LLMClient:
@@ -533,10 +549,15 @@ class LLMClient:
         """Estimate total tokens in current conversation history.
         
         Returns:
-            Estimated total tokens including system prompt
+            Estimated total tokens including system prompt and summary
         """
         # System prompt tokens
         total = self.estimate_tokens(self.system_prompt)
+        
+        # Summary tokens (if present)
+        if self.history.summary:
+            total += self.estimate_tokens(self.history.summary)
+            total += 10  # Overhead for the summary wrapper text
         
         # History tokens
         for msg in self.history.messages:
@@ -558,7 +579,7 @@ class LLMClient:
         """Return memory usage stats for the client.
         
         Returns:
-            Dict with used_tokens, max_tokens, percentage, is_near_limit
+            Dict with used_tokens, max_tokens, percentage, is_near_limit, is_compressed
         """
         # Reserve buffer for system prompt and response generation
         buffer = 512
@@ -570,8 +591,161 @@ class LLMClient:
             "used_tokens": used,
             "max_tokens": available,
             "percentage": percentage,
-            "is_near_limit": percentage > 80
+            "is_near_limit": percentage > 80,
+            "is_compressed": bool(self.history.summary),
         }
+
+    async def summarize_messages(self, messages: list[Message]) -> str:
+        """Summarize a list of messages into a concise context summary.
+        
+        Uses the LLM to generate a summary capturing key facts, decisions,
+        and context from the conversation.
+        
+        Args:
+            messages: List of messages to summarize
+            
+        Returns:
+            A concise summary paragraph
+        """
+        if not messages:
+            return ""
+        
+        # Build conversation text for summarization
+        conversation_text = "\n".join([
+            f"{msg.role.upper()}: {msg.content}"
+            for msg in messages
+        ])
+        
+        # Create a focused summarization prompt
+        summary_prompt = f"""Summarize this conversation excerpt concisely. Capture:
+- Key topics discussed
+- Important facts, names, or numbers mentioned
+- Any decisions or conclusions reached
+- Context needed to continue the conversation naturally
+
+Keep the summary brief (2-4 sentences) but informative.
+
+Conversation:
+{conversation_text}
+
+Summary:"""
+
+        try:
+            # Make a direct API call without affecting history
+            response = await self._async_client.post(
+                f"{self.base_url}/api/chat",
+                json={
+                    "model": self.model_name,
+                    "messages": [
+                        {"role": "system", "content": "You are a helpful assistant that summarizes conversations concisely."},
+                        {"role": "user", "content": summary_prompt}
+                    ],
+                    "stream": False,
+                    "options": {
+                        "temperature": 0.3,  # Lower temperature for more focused summary
+                        "num_predict": 256,  # Limit summary length
+                    },
+                },
+            )
+            response.raise_for_status()
+            result = response.json()
+            summary = result.get("message", {}).get("content", "").strip()
+            print(f"[CONTEXT] Generated summary ({len(summary)} chars): {summary[:100]}...")
+            return summary
+        except Exception as e:
+            print(f"[CONTEXT] Summarization failed: {e}")
+            # Fallback: create a simple text-based summary
+            return self._fallback_summary(messages)
+
+    def _fallback_summary(self, messages: list[Message]) -> str:
+        """Create a simple fallback summary without LLM.
+        
+        Args:
+            messages: List of messages to summarize
+            
+        Returns:
+            A basic summary of the conversation
+        """
+        user_messages = [m.content for m in messages if m.role == "user"]
+        if not user_messages:
+            return ""
+        
+        # Just list the main topics from user messages
+        topics = []
+        for msg in user_messages[:5]:  # Take first 5 user messages
+            # Take first sentence or first 50 chars
+            topic = msg.split('.')[0][:50].strip()
+            if topic:
+                topics.append(topic)
+        
+        if topics:
+            return f"Previous topics discussed: {'; '.join(topics)}."
+        return ""
+
+    async def compress_if_needed(self, threshold_percent: int = 70, keep_recent: int = 8) -> bool:
+        """Check context usage and compress history if approaching limit.
+        
+        This method:
+        1. Checks if context usage is above the threshold
+        2. If so, summarizes older messages while keeping recent exchanges
+        3. Replaces old messages with the summary
+        
+        Args:
+            threshold_percent: Trigger compression when usage exceeds this percentage (default 70%)
+            keep_recent: Number of recent messages to keep unsummarized (default 8 = ~4 exchanges)
+            
+        Returns:
+            True if compression was performed, False otherwise
+        """
+        usage = self.get_memory_usage()
+        
+        # Don't compress if below threshold
+        if usage["percentage"] < threshold_percent:
+            return False
+        
+        # Don't compress if we don't have enough messages to make it worthwhile
+        if len(self.history.messages) <= keep_recent:
+            print(f"[CONTEXT] Above threshold ({usage['percentage']}%) but not enough messages to compress")
+            return False
+        
+        print(f"[CONTEXT] Context usage at {usage['percentage']}%, triggering compression...")
+        
+        # Split messages: older ones to summarize, recent ones to keep
+        messages_to_summarize = self.history.messages[:-keep_recent]
+        messages_to_keep = self.history.messages[-keep_recent:]
+        
+        print(f"[CONTEXT] Summarizing {len(messages_to_summarize)} messages, keeping {len(messages_to_keep)} recent")
+        
+        # Generate summary of older messages
+        new_summary = await self.summarize_messages(messages_to_summarize)
+        
+        if not new_summary:
+            print("[CONTEXT] Failed to generate summary, skipping compression")
+            return False
+        
+        # Combine with existing summary if present
+        if self.history.summary:
+            # Append new summary context to existing
+            combined_summary = f"{self.history.summary}\n\nLater: {new_summary}"
+            # Keep combined summary reasonable in length
+            if len(combined_summary) > 1000:
+                # Re-summarize the combined summary
+                combined_messages = [Message(role="assistant", content=combined_summary)]
+                combined_summary = await self.summarize_messages(combined_messages)
+            self.history.summary = combined_summary
+        else:
+            self.history.summary = new_summary
+        
+        # Replace history with only recent messages
+        self.history.messages = messages_to_keep
+        
+        # Update token estimate
+        self._last_prompt_tokens = self.estimate_history_tokens()
+        
+        new_usage = self.get_memory_usage()
+        print(f"[CONTEXT] Compression complete. Usage: {usage['percentage']}% -> {new_usage['percentage']}%")
+        
+        return True
 
     def close(self) -> None:
         """Close HTTP clients."""

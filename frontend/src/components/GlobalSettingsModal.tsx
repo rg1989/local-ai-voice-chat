@@ -1,5 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
-import { ToolInfo, WakeWordSettings } from '../types';
+import { ToolInfo, WakeWordSettings, SoundSettings } from '../types';
+import {
+  WAKE_SOUNDS,
+  MESSAGE_SOUNDS,
+  THINKING_SOUNDS,
+  DEFAULT_SOUND_SETTINGS,
+  previewSound,
+} from '../utils/soundUtils';
 
 // Default wake word models (fallback if backend hasn't responded)
 const DEFAULT_WAKE_WORD_MODELS: Record<string, string> = {
@@ -15,10 +22,12 @@ interface GlobalSettingsModalProps {
   tools: ToolInfo[];
   globalRules: string;
   wakeWordSettings: WakeWordSettings;
+  soundSettings: SoundSettings;
   onSaveSettings: (settings: {
     tools: Record<string, boolean>;
     globalRules: string;
     wakeWord: WakeWordSettings;
+    sound: SoundSettings;
   }) => void;
 }
 
@@ -99,12 +108,31 @@ function MicrophoneIcon() {
   );
 }
 
+// Speaker icon for sound settings section
+function SpeakerIcon() {
+  return (
+    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+    </svg>
+  );
+}
+
+// Play icon for preview button
+function PlayIcon() {
+  return (
+    <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+      <path d="M8 5v14l11-7z" />
+    </svg>
+  );
+}
+
 export function GlobalSettingsModal({
   isOpen,
   onClose,
   tools,
   globalRules,
   wakeWordSettings,
+  soundSettings,
   onSaveSettings,
 }: GlobalSettingsModalProps) {
   // Local state for all settings (only applied on save)
@@ -116,6 +144,7 @@ export function GlobalSettingsModal({
     threshold: 0.5,
     timeoutSeconds: 10,
   });
+  const [localSound, setLocalSound] = useState<SoundSettings>(DEFAULT_SOUND_SETTINGS);
   const [isSaving, setIsSaving] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -138,8 +167,17 @@ export function GlobalSettingsModal({
         threshold: wakeWordSettings.threshold,
         timeoutSeconds: wakeWordSettings.timeoutSeconds,
       });
+      
+      // Initialize sound settings
+      setLocalSound({
+        enabled: soundSettings.enabled,
+        wakeSound: soundSettings.wakeSound,
+        messageSound: soundSettings.messageSound,
+        thinkingSound: soundSettings.thinkingSound,
+        volume: soundSettings.volume,
+      });
     }
-  }, [isOpen, globalRules, tools, wakeWordSettings]);
+  }, [isOpen, globalRules, tools, wakeWordSettings, soundSettings]);
 
   // Handle escape key
   useEffect(() => {
@@ -168,6 +206,13 @@ export function GlobalSettingsModal({
     if (localWakeWord.threshold !== wakeWordSettings.threshold) return true;
     if (localWakeWord.timeoutSeconds !== wakeWordSettings.timeoutSeconds) return true;
     
+    // Check sound settings
+    if (localSound.enabled !== soundSettings.enabled) return true;
+    if (localSound.wakeSound !== soundSettings.wakeSound) return true;
+    if (localSound.messageSound !== soundSettings.messageSound) return true;
+    if (localSound.thinkingSound !== soundSettings.thinkingSound) return true;
+    if (localSound.volume !== soundSettings.volume) return true;
+    
     return false;
   };
 
@@ -178,6 +223,7 @@ export function GlobalSettingsModal({
         tools: localToolStates,
         globalRules: localRules,
         wakeWord: localWakeWord,
+        sound: localSound,
       });
       onClose();
     } finally {
@@ -207,6 +253,19 @@ export function GlobalSettingsModal({
       ...prev,
       ...changes,
     }));
+  };
+
+  const handleSoundChange = (changes: Partial<SoundSettings>) => {
+    setLocalSound(prev => ({
+      ...prev,
+      ...changes,
+    }));
+  };
+
+  const handlePreviewSound = (category: 'wake' | 'message' | 'thinking', soundId: string) => {
+    if (soundId !== 'none') {
+      previewSound(category, soundId, localSound.volume);
+    }
   };
 
   // Get available wake word models (use backend models if available, otherwise defaults)
@@ -326,6 +385,138 @@ export function GlobalSettingsModal({
             </div>
             <p className="text-xs text-slate-500 mt-2">
               When enabled, the assistant will only listen after you say the wake word.
+            </p>
+          </div>
+
+          {/* Sound Settings Section */}
+          <div>
+            <h3 className="text-sm font-medium text-violet-400 mb-3 flex items-center gap-2">
+              <SpeakerIcon />
+              Sound Feedback
+            </h3>
+            <div className="bg-slate-900/50 rounded-xl border border-slate-700/50 p-4 space-y-4">
+              {/* Enable Toggle */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-sm font-medium text-white">Enable Sound Effects</span>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Play audio feedback for voice interactions
+                  </p>
+                </div>
+                <Toggle 
+                  enabled={localSound.enabled} 
+                  onChange={(enabled) => handleSoundChange({ enabled })} 
+                />
+              </div>
+              
+              {/* Sound Options (only shown when enabled) */}
+              {localSound.enabled && (
+                <>
+                  {/* Volume Slider */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="text-xs text-slate-400">Volume</label>
+                      <span className="text-xs text-violet-400">{Math.round(localSound.volume * 100)}%</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max="1"
+                      step="0.1"
+                      value={localSound.volume}
+                      onChange={(e) => handleSoundChange({ volume: parseFloat(e.target.value) })}
+                      className="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-violet-500"
+                    />
+                  </div>
+
+                  {/* Wake Sound */}
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1.5">Wake Word Detected</label>
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={localSound.wakeSound}
+                        onChange={(e) => handleSoundChange({ wakeSound: e.target.value })}
+                        className="flex-1 px-3 py-2 bg-slate-800 border border-slate-600 rounded-lg text-white text-sm focus:outline-none focus:border-violet-500"
+                      >
+                        {WAKE_SOUNDS.map((sound) => (
+                          <option key={sound.id} value={sound.id}>{sound.name}</option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => handlePreviewSound('wake', localSound.wakeSound)}
+                        disabled={localSound.wakeSound === 'none'}
+                        className="p-2 text-slate-400 hover:text-violet-400 hover:bg-violet-500/10 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                        title="Preview sound"
+                      >
+                        <PlayIcon />
+                      </button>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Plays when the AI starts listening
+                    </p>
+                  </div>
+
+                  {/* Message Sound */}
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1.5">Message Received</label>
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={localSound.messageSound}
+                        onChange={(e) => handleSoundChange({ messageSound: e.target.value })}
+                        className="flex-1 px-3 py-2 bg-slate-800 border border-slate-600 rounded-lg text-white text-sm focus:outline-none focus:border-violet-500"
+                      >
+                        {MESSAGE_SOUNDS.map((sound) => (
+                          <option key={sound.id} value={sound.id}>{sound.name}</option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => handlePreviewSound('message', localSound.messageSound)}
+                        disabled={localSound.messageSound === 'none'}
+                        className="p-2 text-slate-400 hover:text-violet-400 hover:bg-violet-500/10 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                        title="Preview sound"
+                      >
+                        <PlayIcon />
+                      </button>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Plays when your speech is captured
+                    </p>
+                  </div>
+
+                  {/* Thinking Sound */}
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1.5">Processing / Thinking</label>
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={localSound.thinkingSound}
+                        onChange={(e) => handleSoundChange({ thinkingSound: e.target.value })}
+                        className="flex-1 px-3 py-2 bg-slate-800 border border-slate-600 rounded-lg text-white text-sm focus:outline-none focus:border-violet-500"
+                      >
+                        {THINKING_SOUNDS.map((sound) => (
+                          <option key={sound.id} value={sound.id}>{sound.name}</option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => handlePreviewSound('thinking', localSound.thinkingSound)}
+                        disabled={localSound.thinkingSound === 'none'}
+                        className="p-2 text-slate-400 hover:text-violet-400 hover:bg-violet-500/10 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                        title="Preview sound"
+                      >
+                        <PlayIcon />
+                      </button>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Repeating sound while AI is processing
+                    </p>
+                  </div>
+                </>
+              )}
+            </div>
+            <p className="text-xs text-slate-500 mt-2">
+              Audio cues help you know when to speak and when the AI is working.
             </p>
           </div>
 

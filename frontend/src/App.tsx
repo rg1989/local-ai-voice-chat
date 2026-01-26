@@ -8,8 +8,16 @@ import { GlobalSettingsModal } from './components/GlobalSettingsModal';
 import { useWebSocket } from './hooks/useWebSocket';
 import { useAudioStream } from './hooks/useAudioStream';
 import { useConversations } from './hooks/useConversations';
-import { AppState, Message, WSMessage, ConversationSummary, MemoryUsage, ToolInfo, WakeWordSettings } from './types';
+import { AppState, Message, WSMessage, ConversationSummary, MemoryUsage, ToolInfo, WakeWordSettings, SoundSettings } from './types';
 import { generateId } from './utils/audioUtils';
+import {
+  playWakeSound,
+  playMessageSound,
+  startThinkingSound,
+  stopThinkingSound,
+  DEFAULT_SOUND_SETTINGS,
+  initAudioContext,
+} from './utils/soundUtils';
 
 // Voice mapping for display
 const VOICE_MAP: Record<string, string> = {
@@ -118,6 +126,32 @@ function App() {
     displayName: string;
   } | null>(null);
   
+  // Sound settings - initialize from localStorage
+  const [soundSettings, setSoundSettings] = useState<SoundSettings>(() => {
+    const saved = localStorage.getItem('soundSettings');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        return {
+          enabled: parsed.enabled ?? DEFAULT_SOUND_SETTINGS.enabled,
+          wakeSound: parsed.wakeSound ?? DEFAULT_SOUND_SETTINGS.wakeSound,
+          messageSound: parsed.messageSound ?? DEFAULT_SOUND_SETTINGS.messageSound,
+          thinkingSound: parsed.thinkingSound ?? DEFAULT_SOUND_SETTINGS.thinkingSound,
+          volume: parsed.volume ?? DEFAULT_SOUND_SETTINGS.volume,
+        };
+      } catch (e) {
+        console.error('Failed to parse saved sound settings:', e);
+      }
+    }
+    return DEFAULT_SOUND_SETTINGS;
+  });
+  
+  // Ref to track sound settings for use in callbacks (avoids stale closure)
+  const soundSettingsRef = useRef(soundSettings);
+  useEffect(() => {
+    soundSettingsRef.current = soundSettings;
+  }, [soundSettings]);
+  
   // Track if listening was auto-started by wake word mode
   const wakeWordAutoListeningRef = useRef(false);
 
@@ -143,6 +177,8 @@ function App() {
         switch (message.status) {
           case 'ready':
           case 'listening':
+            // Stop thinking sound if it was playing
+            stopThinkingSound();
             if (isListeningRef.current) {
               setState(AppState.LISTENING);
             } else {
@@ -166,11 +202,22 @@ function App() {
             break;
           case 'thinking':
             setState(AppState.THINKING);
+            // Start thinking sound
+            if (soundSettingsRef.current.enabled) {
+              startThinkingSound(
+                soundSettingsRef.current.thinkingSound,
+                soundSettingsRef.current.volume
+              );
+            }
             break;
           case 'speaking':
             setState(AppState.SPEAKING);
+            // Stop thinking sound when speaking starts
+            stopThinkingSound();
             break;
           case 'stopped':
+            // Stop thinking sound
+            stopThinkingSound();
             // Clear streaming content on stop
             if (streamingContentRef.current) {
               setMessages((prev) => [
@@ -197,6 +244,13 @@ function App() {
         }
         break;
       case 'transcription':
+        // Play message received sound
+        if (soundSettingsRef.current.enabled) {
+          playMessageSound(
+            soundSettingsRef.current.messageSound,
+            soundSettingsRef.current.volume
+          );
+        }
         // Add user message
         currentUserMessageRef.current = message.text;
         setMessages((prev) => {
@@ -251,6 +305,13 @@ function App() {
         break;
       case 'wake_status':
         console.log('[WakeWord] Status update:', message.state, message.displayName);
+        // Play wake sound when wake word is detected
+        if (message.state === 'active' && soundSettingsRef.current.enabled) {
+          playWakeSound(
+            soundSettingsRef.current.wakeSound,
+            soundSettingsRef.current.volume
+          );
+        }
         setWakeWordStatus({
           state: message.state,
           displayName: message.displayName,
@@ -589,6 +650,7 @@ function App() {
     tools: Record<string, boolean>;
     globalRules: string;
     wakeWord: WakeWordSettings;
+    sound: SoundSettings;
   }) => {
     // Save global rules
     setGlobalRules(settings.globalRules);
@@ -636,12 +698,19 @@ function App() {
       sendSetWakeWordSettings(settings.wakeWord);
     }
     
+    // Save sound settings
+    setSoundSettings(settings.sound);
+    localStorage.setItem('soundSettings', JSON.stringify(settings.sound));
+    
     setToast({ message: 'Settings saved', type: 'success' });
     setTimeout(() => setToast(null), 3000);
   }, [isConnected, sendSetGlobalRules, sendSetToolEnabled, sendSetWakeWordSettings]);
 
   const handleToggleListening = useCallback(async () => {
     if (!ollamaStatus.available) return;
+    
+    // Initialize audio context on first user interaction (for sound effects)
+    initAudioContext();
     
     if (isListening) {
       isListeningRef.current = false;
@@ -665,6 +734,9 @@ function App() {
   const handleSendText = useCallback(
     (text: string) => {
       if (!ollamaStatus.available) return;
+      
+      // Initialize audio context on first user interaction (for sound effects)
+      initAudioContext();
       
       if (isListening) {
         isListeningRef.current = false;
@@ -801,6 +873,7 @@ function App() {
         tools={availableTools}
         globalRules={globalRules}
         wakeWordSettings={wakeWordSettings}
+        soundSettings={soundSettings}
         onSaveSettings={handleSaveGlobalSettings}
       />
 

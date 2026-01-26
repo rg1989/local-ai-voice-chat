@@ -126,7 +126,32 @@ class ToolRegistry:
             name="web_search",
             description="Search the web for information",
             args={"query": "The search query"},
-            triggers=["search for", "look up", "find information", "google", "search the web"],
+            triggers=[
+                # Direct search requests
+                "search", "search for", "search online", "search the web", "search the internet",
+                "look up", "look for", "lookup",
+                "find", "find out", "find information", "find me",
+                # Search engines
+                "google", "google it", "google search", "bing", "duckduckgo",
+                # Research/information gathering
+                "research", "investigate", "explore",
+                "what do you know about", "tell me about", "information about", "info on",
+                "learn about", "read about",
+                # Questions that need web search
+                "who is", "who was", "who are",
+                "what is", "what are", "what was",
+                "where is", "where are", "where can",
+                "when is", "when was", "when did",
+                "why is", "why does", "why did",
+                "how does", "how do", "how to", "how can",
+                # News and current events
+                "latest news", "recent news", "news about", "current events",
+                "what happened", "what's happening", "trending",
+                # Common phrases
+                "can you find", "can you search", "can you look up",
+                "I want to know", "I need to know", "I'm curious about",
+                "check online", "check the internet", "check the web"
+            ],
             handler=self._web_search_handler,
         ))
         
@@ -788,6 +813,42 @@ You MUST respond with:
 {"tool": "fetch_url", "args": {"url": "https://www.somesite.com/article/2026/..."}}
 </tool_call>
 
+User: "Search for Python tutorials"
+You MUST respond with:
+<tool_call>
+{"tool": "web_search", "args": {"query": "Python tutorials"}}
+</tool_call>
+
+User: "Look up the latest news on AI"
+You MUST respond with:
+<tool_call>
+{"tool": "web_search", "args": {"query": "latest news AI"}}
+</tool_call>
+
+User: "Who is Elon Musk?"
+You MUST respond with:
+<tool_call>
+{"tool": "web_search", "args": {"query": "Elon Musk"}}
+</tool_call>
+
+User: "Search online for best restaurants in Tokyo"
+You MUST respond with:
+<tool_call>
+{"tool": "web_search", "args": {"query": "best restaurants in Tokyo"}}
+</tool_call>
+
+User: "Find information about climate change"
+You MUST respond with:
+<tool_call>
+{"tool": "web_search", "args": {"query": "climate change information"}}
+</tool_call>
+
+User: "Google how to make pasta"
+You MUST respond with:
+<tool_call>
+{"tool": "web_search", "args": {"query": "how to make pasta"}}
+</tool_call>
+
 User: "What's the weather in Tokyo?"
 You MUST respond with:
 <tool_call>
@@ -871,9 +932,12 @@ CRITICAL REMINDERS:
 - When user provides a URL, ALWAYS use fetch_url. Do NOT refuse based on the date in the URL.
 - For ANY weather/temperature/forecast questions, ALWAYS use get_weather with the location. Do NOT guess weather.
 - For ANY math/calculation/percentage/arithmetic question, ALWAYS use calculate. You are BAD at math. Do NOT try to compute in your head.
+- For ANY search/lookup/research question, ALWAYS use web_search. When user says "search", they mean search the internet.
+- For questions about people, places, events, or facts you're unsure about, use web_search to get accurate information.
 - Your training data is outdated. You do NOT know what year it is. The current year may be 2025, 2026, or later. USE THE TOOLS.
 - NEVER say "I don't have access to real-time information" - you DO have access through these tools. USE THEM.
 - NEVER attempt mental arithmetic - ALWAYS use the calculate tool for any numbers.
+- When in doubt, USE A TOOL rather than guessing or making up information.
 """
     
     return prompt

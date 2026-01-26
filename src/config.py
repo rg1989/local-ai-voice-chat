@@ -66,7 +66,7 @@ class ToolSettings(BaseSettings):
     require_confirmation: bool = Field(
         default=False, description="Require confirmation for dangerous tools"
     )
-    fetch_timeout: float = Field(default=10.0, description="Timeout for URL fetches")
+    fetch_timeout: float = Field(default=30.0, description="Timeout for URL fetches")
     command_timeout: float = Field(default=30.0, description="Timeout for command execution")
     max_content_length: int = Field(
         default=8000, description="Max characters to include from fetched content"

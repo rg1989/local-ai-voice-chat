@@ -82,6 +82,35 @@ function getToolName(content: string): string | null {
   return match ? match[1] : null;
 }
 
+// Render text with clickable links
+function TextWithLinks({ text, className }: { text: string; className?: string }) {
+  // URL regex pattern
+  const urlPattern = /(https?:\/\/[^\s<>"\]]+)/g;
+  
+  const parts = text.split(urlPattern);
+  
+  return (
+    <p className={className}>
+      {parts.map((part, index) => {
+        if (part.match(urlPattern)) {
+          return (
+            <a
+              key={index}
+              href={part}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-400 hover:text-blue-300 underline break-all"
+            >
+              {part}
+            </a>
+          );
+        }
+        return <span key={index}>{part}</span>;
+      })}
+    </p>
+  );
+}
+
 export function ChatMessage({ message, onContentChange }: ChatMessageProps) {
   const isUser = message.role === 'user';
   const [copied, setCopied] = useState(false);
@@ -113,7 +142,7 @@ export function ChatMessage({ message, onContentChange }: ChatMessageProps) {
           }`}
         >
           {isUser ? (
-            <p className="text-sm leading-relaxed whitespace-pre-wrap">{message.content}</p>
+            <TextWithLinks text={message.content} className="text-sm leading-relaxed whitespace-pre-wrap" />
           ) : isToolCall(message.content) ? (
             <div>
               <div className="flex items-center gap-2 text-amber-400 text-sm font-medium mb-2">

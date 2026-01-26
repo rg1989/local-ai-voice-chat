@@ -55,7 +55,7 @@ class ToolRegistry:
         self._http_client: Optional[httpx.AsyncClient] = None
         
         # Tool settings
-        self.fetch_timeout: float = 10.0
+        self.fetch_timeout: float = 30.0
         self.max_content_length: int = 8000
         self.command_timeout: float = 30.0
         self.allowed_commands: list[str] = [
@@ -104,7 +104,20 @@ class ToolRegistry:
             name="get_datetime",
             description="Get the current date and time",
             args={},
-            triggers=["what time", "what date", "current time", "today", "now"],
+            triggers=[
+                "what time", "what's the time", "what is the time", "the time",
+                "what date", "what's the date", "what is the date", "the date",
+                "what day", "what's the day", "what is the day", "what day is it",
+                "current time", "current date", "current day",
+                "today", "today's date", "what is today",
+                "now", "right now",
+                "what year", "what's the year", "what is the year", "current year",
+                "what month", "what's the month", "current month",
+                "date today", "time now", "day today",
+                "tell me the time", "tell me the date",
+                "do you know the time", "do you know the date",
+                "can you tell me the time", "can you tell me the date"
+            ],
             handler=self._get_datetime_handler,
         ))
         
@@ -122,7 +135,15 @@ class ToolRegistry:
             name="get_weather",
             description="Get current weather for a location",
             args={"location": "City name or location"},
-            triggers=["weather in", "weather for", "forecast", "temperature in"],
+            triggers=[
+                "weather in", "weather for", "weather", "what's the weather",
+                "what is the weather", "how's the weather", "how is the weather",
+                "forecast", "forecast for", "forecast in",
+                "temperature", "temperature in", "temperature for",
+                "what's the temperature", "what is the temperature",
+                "how hot", "how cold", "is it raining", "is it snowing",
+                "climate", "conditions in"
+            ],
             handler=self._get_weather_handler,
         ))
         
@@ -131,7 +152,36 @@ class ToolRegistry:
             name="calculate",
             description="Evaluate a mathematical expression",
             args={"expression": "The math expression to evaluate (e.g., '2 + 2', 'sqrt(16)')"},
-            triggers=["calculate", "compute", "what is", "solve", "evaluate"],
+            triggers=[
+                # Direct calculation requests
+                "calculate", "compute", "evaluate", "solve",
+                "what is", "what's", "how much is", "how many is",
+                # Math operations
+                "add", "subtract", "multiply", "divide", "plus", "minus", "times",
+                "sum of", "total of", "product of", "difference of", "quotient of",
+                # Percentages
+                "percent", "percentage", "% of", "percent of",
+                "what percent", "what percentage",
+                # Advanced math
+                "square root", "sqrt", "cube root",
+                "power of", "to the power", "squared", "cubed", "exponent",
+                "logarithm", "log of", "natural log", "ln of",
+                "sine", "cosine", "tangent", "sin of", "cos of", "tan of",
+                # Comparisons
+                "average", "mean", "median", "sum", "total",
+                "minimum", "maximum", "min of", "max of",
+                # Financial/practical
+                "tip", "discount", "tax", "interest", "compound interest",
+                "split the bill", "divide by", "per person",
+                "convert", "conversion",
+                # Common patterns
+                "equals", "equal to", "result of",
+                "work out", "figure out", "help me calculate",
+                "do the math", "crunch the numbers",
+                # Numbers in context
+                "divided by", "multiplied by", "added to", "subtracted from",
+                "times", "over", "raised to"
+            ],
             handler=self._calculate_handler,
         ))
     
@@ -166,10 +216,20 @@ class ToolRegistry:
     async def _get_http_client(self) -> httpx.AsyncClient:
         """Get or create HTTP client."""
         if self._http_client is None:
+            # Use realistic browser headers to avoid being blocked
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.5",
+                "Accept-Encoding": "gzip, deflate",
+                "Connection": "keep-alive",
+                "Upgrade-Insecure-Requests": "1",
+            }
             self._http_client = httpx.AsyncClient(
                 timeout=self.fetch_timeout,
                 follow_redirects=True,
-                headers={"User-Agent": "Mozilla/5.0 (compatible; LocalChatbot/1.0)"}
+                headers=headers,
+                verify=False,  # Disable SSL verification to avoid certificate issues
             )
         return self._http_client
     
@@ -234,6 +294,17 @@ class ToolRegistry:
         try:
             client = await self._get_http_client()
             response = await client.get(url)
+            
+            # Check for Cloudflare or similar protection blocking
+            if response.status_code == 403:
+                response_text = response.text.lower()
+                if "cloudflare" in response_text or "attention required" in response_text:
+                    return ToolResult(
+                        success=False,
+                        output="",
+                        error=f"This website ({parsed.netloc}) is protected by Cloudflare and blocks automated access. Ask the user to copy-paste the article content directly, or try a different source."
+                    )
+            
             response.raise_for_status()
             
             content_type = response.headers.get("content-type", "")
@@ -252,18 +323,30 @@ class ToolRegistry:
             )
             
         except httpx.TimeoutException:
+            print(f"[TOOL] Timeout fetching URL: {url}")
             return ToolResult(
                 success=False,
                 output="",
-                error=f"Timeout fetching URL: {url}"
+                error=f"Timeout fetching URL (tried for 30s): {url}"
             )
         except httpx.HTTPStatusError as e:
+            print(f"[TOOL] HTTP error {e.response.status_code} for URL: {url}")
+            # Check for Cloudflare block
+            if e.response.status_code == 403:
+                response_text = e.response.text.lower()
+                if "cloudflare" in response_text or "attention required" in response_text:
+                    return ToolResult(
+                        success=False,
+                        output="",
+                        error=f"This website is protected by Cloudflare and blocks automated access. The user should copy-paste the article content directly."
+                    )
             return ToolResult(
                 success=False,
                 output="",
                 error=f"HTTP error {e.response.status_code}: {url}"
             )
         except Exception as e:
+            print(f"[TOOL] Error fetching URL {url}: {str(e)}")
             return ToolResult(
                 success=False,
                 output="",
@@ -484,17 +567,56 @@ class ToolRegistry:
         if HAS_BS4:
             try:
                 soup = BeautifulSoup(html, "html.parser")
-                for result in soup.select(".result"):
-                    title_elem = result.select_one(".result__title a")
-                    snippet_elem = result.select_one(".result__snippet")
+                
+                # Try multiple selectors as DDG structure may vary
+                selectors = [
+                    (".result", ".result__title a", ".result__snippet"),
+                    (".web-result", ".result__a", ".result__snippet"),
+                    (".results_links", "a.result__a", ".result__snippet"),
+                ]
+                
+                for result_sel, title_sel, snippet_sel in selectors:
+                    for result in soup.select(result_sel):
+                        title_elem = result.select_one(title_sel)
+                        snippet_elem = result.select_one(snippet_sel)
+                        
+                        if title_elem:
+                            title = title_elem.get_text(strip=True)
+                            url = title_elem.get("href", "")
+                            snippet = snippet_elem.get_text(strip=True) if snippet_elem else ""
+                            if title and len(title) > 3:  # Filter out empty/junk results
+                                results.append((title, snippet, url))
                     
-                    if title_elem:
-                        title = title_elem.get_text(strip=True)
-                        url = title_elem.get("href", "")
-                        snippet = snippet_elem.get_text(strip=True) if snippet_elem else ""
-                        results.append((title, snippet, url))
-            except Exception:
-                pass
+                    if results:
+                        break  # Found results with this selector
+                
+                # Fallback: try to find any links with reasonable content
+                if not results:
+                    for link in soup.find_all("a", href=True):
+                        href = link.get("href", "")
+                        text = link.get_text(strip=True)
+                        if href.startswith("http") and len(text) > 10 and "duckduckgo" not in href.lower():
+                            # Get nearby text as snippet
+                            parent = link.parent
+                            snippet = parent.get_text(strip=True)[:200] if parent else ""
+                            results.append((text, snippet, href))
+                            if len(results) >= 5:
+                                break
+                                
+            except Exception as e:
+                print(f"[TOOL] DDG parse error: {e}")
+        
+        # Regex fallback if BS4 failed or not available
+        if not results:
+            import re
+            # Try to extract URLs and titles from the raw HTML
+            pattern = r'<a[^>]+href="(https?://[^"]+)"[^>]*>([^<]+)</a>'
+            matches = re.findall(pattern, html)
+            for url, title in matches:
+                if "duckduckgo" not in url.lower() and len(title) > 10:
+                    results.append((title.strip(), "", url))
+                    if len(results) >= 5:
+                        break
         
         return results
     
@@ -592,10 +714,12 @@ def generate_tool_prompt() -> str:
 You have access to the following tools. You MUST use them when needed.
 
 **CRITICAL RULES:**
-1. You do NOT know the current date or time - you MUST use the get_datetime tool
+1. You do NOT know the current date or time - you MUST use the get_datetime tool. Your training data is outdated.
 2. You CANNOT browse the internet directly - you MUST use fetch_url or web_search tools
 3. You CANNOT see local files - you MUST use read_file tool
 4. NEVER make up information - USE THE TOOLS to get real data
+5. NEVER assume a URL is invalid based on dates. Your training data cutoff is outdated. If a user provides a URL, ALWAYS fetch it with fetch_url.
+6. When a user asks you to summarize/read/check a URL, you MUST use fetch_url immediately. Do NOT discuss whether the URL is valid - just fetch it.
 
 When you need to use a tool, output a tool call in this EXACT format:
 
@@ -622,7 +746,31 @@ After receiving tool results, incorporate them naturally into your response.
     prompt += """
 ### Examples:
 
-User: "What time is it?" or "What's the date?" or "What is the current date and time?"
+User: "What time is it?"
+You MUST respond with:
+<tool_call>
+{"tool": "get_datetime", "args": {}}
+</tool_call>
+
+User: "What's the date?" or "What is the date today?"
+You MUST respond with:
+<tool_call>
+{"tool": "get_datetime", "args": {}}
+</tool_call>
+
+User: "What day is it?" or "What is today?"
+You MUST respond with:
+<tool_call>
+{"tool": "get_datetime", "args": {}}
+</tool_call>
+
+User: "What year is it?" or "What is the current year?"
+You MUST respond with:
+<tool_call>
+{"tool": "get_datetime", "args": {}}
+</tool_call>
+
+User: "Tell me the time" or "Can you tell me the date?"
 You MUST respond with:
 <tool_call>
 {"tool": "get_datetime", "args": {}}
@@ -634,13 +782,98 @@ You MUST respond with:
 {"tool": "fetch_url", "args": {"url": "https://example.com"}}
 </tool_call>
 
+User: "Can you summarize this https://www.somesite.com/article/2026/..."
+You MUST respond with:
+<tool_call>
+{"tool": "fetch_url", "args": {"url": "https://www.somesite.com/article/2026/..."}}
+</tool_call>
+
 User: "What's the weather in Tokyo?"
 You MUST respond with:
 <tool_call>
 {"tool": "get_weather", "args": {"location": "Tokyo"}}
 </tool_call>
 
-REMEMBER: For date/time questions, ALWAYS output the get_datetime tool call first. Do NOT guess or make up times.
+User: "What is the temperature in Paris?"
+You MUST respond with:
+<tool_call>
+{"tool": "get_weather", "args": {"location": "Paris"}}
+</tool_call>
+
+User: "What's the forecast for London?"
+You MUST respond with:
+<tool_call>
+{"tool": "get_weather", "args": {"location": "London"}}
+</tool_call>
+
+User: "How's the weather in New York?"
+You MUST respond with:
+<tool_call>
+{"tool": "get_weather", "args": {"location": "New York"}}
+</tool_call>
+
+User: "Is it raining in Seattle?"
+You MUST respond with:
+<tool_call>
+{"tool": "get_weather", "args": {"location": "Seattle"}}
+</tool_call>
+
+User: "What is 15% of 250?"
+You MUST respond with:
+<tool_call>
+{"tool": "calculate", "args": {"expression": "0.15 * 250"}}
+</tool_call>
+
+User: "Calculate 45 times 23"
+You MUST respond with:
+<tool_call>
+{"tool": "calculate", "args": {"expression": "45 * 23"}}
+</tool_call>
+
+User: "What's the square root of 144?"
+You MUST respond with:
+<tool_call>
+{"tool": "calculate", "args": {"expression": "sqrt(144)"}}
+</tool_call>
+
+User: "How much is 500 divided by 7?"
+You MUST respond with:
+<tool_call>
+{"tool": "calculate", "args": {"expression": "500 / 7"}}
+</tool_call>
+
+User: "Add 123 and 456"
+You MUST respond with:
+<tool_call>
+{"tool": "calculate", "args": {"expression": "123 + 456"}}
+</tool_call>
+
+User: "What's 20% tip on $85?"
+You MUST respond with:
+<tool_call>
+{"tool": "calculate", "args": {"expression": "0.20 * 85"}}
+</tool_call>
+
+User: "Split $120 between 4 people"
+You MUST respond with:
+<tool_call>
+{"tool": "calculate", "args": {"expression": "120 / 4"}}
+</tool_call>
+
+User: "What is 5 to the power of 3?"
+You MUST respond with:
+<tool_call>
+{"tool": "calculate", "args": {"expression": "pow(5, 3)"}}
+</tool_call>
+
+CRITICAL REMINDERS:
+- For ANY date/time/day/year/month question, ALWAYS use get_datetime. You do NOT know the current date or time. Do NOT guess or assume.
+- When user provides a URL, ALWAYS use fetch_url. Do NOT refuse based on the date in the URL.
+- For ANY weather/temperature/forecast questions, ALWAYS use get_weather with the location. Do NOT guess weather.
+- For ANY math/calculation/percentage/arithmetic question, ALWAYS use calculate. You are BAD at math. Do NOT try to compute in your head.
+- Your training data is outdated. You do NOT know what year it is. The current year may be 2025, 2026, or later. USE THE TOOLS.
+- NEVER say "I don't have access to real-time information" - you DO have access through these tools. USE THEM.
+- NEVER attempt mental arithmetic - ALWAYS use the calculate tool for any numbers.
 """
     
     return prompt

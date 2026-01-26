@@ -89,6 +89,24 @@ export interface MemoryUsage {
   is_near_limit: boolean;
 }
 
+// Search types
+export interface SearchMatch {
+  message_id: string;
+  message_index: number;
+  role: 'user' | 'assistant';
+  context: string;
+  timestamp: string;
+}
+
+export interface SearchResult {
+  conversation_id: string;
+  title: string;
+  matches: SearchMatch[];
+  total_matches: number;
+  title_match: boolean;
+  updated_at: string;
+}
+
 // WebSocket message types
 export interface WSStatusMessage {
   type: 'status';

@@ -374,7 +374,7 @@ class VoiceChatSession:
 
     async def process_audio_chunk(self, audio_data: bytes) -> None:
         """Process incoming audio chunk."""
-        # Skip if already processing
+        # Skip if a processing task is running (transcription/LLM)
         if self._processing_task and not self._processing_task.done():
             return
             
@@ -392,10 +392,8 @@ class VoiceChatSession:
             
             ww_result = self.wakeword.process(audio)
             
-            # If wake word was just detected, send status
-            if ww_result.detected:
-                print(f"[WAKEWORD] Detected '{ww_result.model_name}' with confidence {ww_result.confidence:.2f}")
-                await self._send_wake_status("active")
+            # The wakeword callback (_on_wake_detected) handles sending the status
+            # and the _detection_lock_until prevents multiple detections
             
             # Only process through VAD if wake word is active (or just detected)
             if ww_result.state != WakeWordState.ACTIVE:
@@ -408,6 +406,12 @@ class VoiceChatSession:
             self._is_speaking = True
             await self.send_status("listening")
             # Reset wake word timeout while speaking
+            if self.wakeword.enabled:
+                self.wakeword.reset_timeout()
+
+        elif result.state == SpeechState.SPEAKING:
+            # Continuously reset timeout while user is speaking
+            # This prevents timeout during long sentences
             if self.wakeword.enabled:
                 self.wakeword.reset_timeout()
 

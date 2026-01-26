@@ -74,6 +74,10 @@ class WakeWordDetector:
         self._tts_end_time: float = 0  # When cooldown started, for post-response cooldown
         self._post_tts_cooldown_ms: float = 1000  # Cooldown period after returning to listening (1 second)
         self._cooldown_log_count: int = 0  # For limiting cooldown log spam
+        
+        # Detection lock - prevents re-triggering for N seconds after detection
+        # This is a hard lock that blocks at the START of process(), before any other logic
+        self._detection_lock_until: float = 0
 
         # Callbacks
         self._on_wake_detected: Optional[Callable[[], None]] = None
@@ -144,6 +148,18 @@ class WakeWordDetector:
         Returns:
             WakeWordResult with state and detection info
         """
+        # HARD LOCK: Immediately block if recently detected
+        # This is the FIRST check to prevent race conditions where multiple chunks
+        # arrive before state is updated
+        current_time = time.time()
+        if current_time < self._detection_lock_until:
+            return WakeWordResult(
+                state=self._state,
+                detected=False,
+                confidence=0.0,
+                model_name=self.model_name,
+            )
+        
         # If disabled, always return disabled state
         if not self.enabled:
             return WakeWordResult(
@@ -277,6 +293,17 @@ class WakeWordDetector:
             self._last_detection_time = current_time
             self._active_start_time = current_time
             self._state = WakeWordState.ACTIVE
+            
+            # CRITICAL: Set detection lock to prevent re-triggering for 2 seconds
+            # This blocks any audio chunks that arrive before state is fully propagated
+            self._detection_lock_until = current_time + 2.0
+            print(f"[WAKEWORD] Detection lock set for 2 seconds")
+            
+            # Reset OWW model immediately to clear accumulated audio buffer
+            # This prevents the same "Alexa" audio from triggering multiple detections
+            if self._oww_model is not None:
+                self._oww_model.reset()
+                print(f"[WAKEWORD] Model state reset after detection")
 
             if self._on_wake_detected:
                 self._on_wake_detected()
@@ -302,6 +329,8 @@ class WakeWordDetector:
             # This prevents false wake word triggers from residual audio
             self._tts_end_time = time.time()
             self._cooldown_log_count = 0  # Reset for fresh logging
+            # Clear detection lock so new detections can happen after cooldown
+            self._detection_lock_until = 0
             print(f"[WAKEWORD] Set listening, starting {self._post_tts_cooldown_ms}ms cooldown")
 
     def reset_timeout(self) -> None:

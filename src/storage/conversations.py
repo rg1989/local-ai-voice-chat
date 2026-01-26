@@ -445,3 +445,70 @@ class ConversationStorage:
         
         # Return newest first, limited
         return list(reversed(conversation.interaction_logs[-limit:]))
+
+    def search(self, query: str, limit: int = 50) -> list[dict]:
+        """Search all conversations for query in message content.
+        
+        Args:
+            query: The search query (case-insensitive)
+            limit: Maximum number of matching conversations to return
+            
+        Returns:
+            List of search results with matches and context
+        """
+        import re
+        
+        if not query or not query.strip():
+            return []
+        
+        query = query.strip()
+        results = []
+        
+        # Escape special regex characters for safe searching
+        escaped_query = re.escape(query)
+        pattern = re.compile(escaped_query, re.IGNORECASE)
+        
+        for conv in self.list_all():
+            matches = []
+            
+            for idx, msg in enumerate(conv.messages):
+                # Search in message content
+                match = pattern.search(msg.content)
+                if match:
+                    # Extract context around the match (up to 100 chars on each side)
+                    start = max(0, match.start() - 50)
+                    end = min(len(msg.content), match.end() + 50)
+                    
+                    # Build context with ellipsis if truncated
+                    context = ""
+                    if start > 0:
+                        context = "..."
+                    context += msg.content[start:end]
+                    if end < len(msg.content):
+                        context += "..."
+                    
+                    matches.append({
+                        "message_id": msg.id,
+                        "message_index": idx,
+                        "role": msg.role,
+                        "context": context,
+                        "timestamp": msg.timestamp,
+                    })
+            
+            # Also search in title
+            title_match = pattern.search(conv.title)
+            
+            if matches or title_match:
+                results.append({
+                    "conversation_id": conv.id,
+                    "title": conv.title,
+                    "matches": matches[:10],  # Limit matches per conversation
+                    "total_matches": len(matches),
+                    "title_match": title_match is not None,
+                    "updated_at": conv.updated_at,
+                })
+        
+        # Sort by most recent first, then by number of matches
+        results.sort(key=lambda r: (r["updated_at"], r["total_matches"]), reverse=True)
+        
+        return results[:limit]

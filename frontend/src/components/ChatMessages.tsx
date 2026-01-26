@@ -19,6 +19,10 @@ interface ChatMessagesProps {
   state: AppState;
   wakeWordEnabled?: boolean;
   wakeWordStatus?: WakeWordStatus | null;
+  // Search/scroll props
+  scrollToMessageIndex?: number | null;
+  highlightMessageId?: string | null;
+  onScrollComplete?: () => void;
 }
 
 // Microphone icon
@@ -213,19 +217,59 @@ export const ChatMessages = memo(function ChatMessages({
   state,
   wakeWordEnabled = false,
   wakeWordStatus = null,
+  scrollToMessageIndex = null,
+  highlightMessageId = null,
+  onScrollComplete,
 }: ChatMessagesProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messageRefs = useRef<Map<number, HTMLDivElement>>(new Map());
   const [copied, setCopied] = useState(false);
+  const [highlightedId, setHighlightedId] = useState<string | null>(null);
 
   // Memoize scrollToBottom to prevent child re-renders
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, []);
 
-  // Scroll when messages change, streaming content changes, or state changes
+  // Handle scroll to specific message when scrollToMessageIndex changes
   useEffect(() => {
-    scrollToBottom();
-  }, [messages, streamingContent, state, scrollToBottom]);
+    if (scrollToMessageIndex !== null && scrollToMessageIndex >= 0 && scrollToMessageIndex < messages.length) {
+      const messageEl = messageRefs.current.get(scrollToMessageIndex);
+      if (messageEl) {
+        // Scroll to center the message
+        messageEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        
+        // Set highlight
+        setHighlightedId(messages[scrollToMessageIndex].id);
+        
+        // Clear highlight after animation
+        const timer = setTimeout(() => {
+          setHighlightedId(null);
+          onScrollComplete?.();
+        }, 2500);
+        
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [scrollToMessageIndex, messages, onScrollComplete]);
+
+  // Also handle external highlight changes
+  useEffect(() => {
+    if (highlightMessageId) {
+      setHighlightedId(highlightMessageId);
+      const timer = setTimeout(() => {
+        setHighlightedId(null);
+      }, 2500);
+      return () => clearTimeout(timer);
+    }
+  }, [highlightMessageId]);
+
+  // Scroll when messages change, streaming content changes, or state changes (but not when scrollToMessageIndex is set)
+  useEffect(() => {
+    if (scrollToMessageIndex === null) {
+      scrollToBottom();
+    }
+  }, [messages, streamingContent, state, scrollToBottom, scrollToMessageIndex]);
   
   // Check if we should show the transcribing indicator (user avatar with "Transcribing...")
   const isTranscribing = state === AppState.TRANSCRIBING;
@@ -424,11 +468,29 @@ export const ChatMessages = memo(function ChatMessages({
             </div>
           )}
 
-          {messages.map((message, index) => (
-            <div key={message.id} className="animate-fade-in" style={{ animationDelay: `${index * 50}ms` }}>
-              <ChatMessage message={message} onContentChange={scrollToBottom} />
-            </div>
-          ))}
+          {messages.map((message, index) => {
+            const isHighlighted = highlightedId === message.id;
+            return (
+              <div 
+                key={message.id} 
+                ref={(el) => {
+                  if (el) {
+                    messageRefs.current.set(index, el);
+                  } else {
+                    messageRefs.current.delete(index);
+                  }
+                }}
+                className={`animate-fade-in transition-all duration-500 ${
+                  isHighlighted 
+                    ? 'ring-2 ring-emerald-500/50 rounded-2xl bg-emerald-500/5 search-highlight' 
+                    : ''
+                }`}
+                style={{ animationDelay: `${index * 50}ms` }}
+              >
+                <ChatMessage message={message} onContentChange={scrollToBottom} />
+              </div>
+            );
+          })}
 
           {/* Transcribing indicator - show user avatar when speech is being converted to text */}
           {isTranscribing && (

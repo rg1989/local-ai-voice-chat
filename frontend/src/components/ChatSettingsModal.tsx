@@ -113,7 +113,7 @@ Examples:
 • You are a Python expert
 • Keep responses under 100 words
 • Explain things simply"
-            className="w-full h-48 px-4 py-3 bg-slate-900/50 border border-violet-500/30 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/25 resize-none"
+            className="w-full h-48 px-3 py-2.5 bg-slate-900/50 border border-violet-500/30 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/25 resize-none"
           />
           <p className="text-xs text-slate-500 mt-2">
             These rules will be applied to every response in this chat.

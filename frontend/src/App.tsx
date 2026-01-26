@@ -8,6 +8,7 @@ import { GlobalSettingsModal } from './components/GlobalSettingsModal';
 import { useWebSocket } from './hooks/useWebSocket';
 import { useAudioStream } from './hooks/useAudioStream';
 import { useConversations } from './hooks/useConversations';
+import { useSearch } from './hooks/useSearch';
 import { AppState, Message, WSMessage, ConversationSummary, MemoryUsage, ToolInfo, WakeWordSettings, SoundSettings } from './types';
 import { generateId } from './utils/audioUtils';
 import {
@@ -146,6 +147,20 @@ function App() {
     return DEFAULT_SOUND_SETTINGS;
   });
   
+  // Search functionality
+  const {
+    query: searchQuery,
+    setQuery: setSearchQuery,
+    results: searchResults,
+    isSearching,
+    clearSearch,
+    hasSearched,
+  } = useSearch();
+  
+  // Search navigation state
+  const [scrollToMessageIndex, setScrollToMessageIndex] = useState<number | null>(null);
+  const [highlightMessageId, setHighlightMessageId] = useState<string | null>(null);
+  
   // Ref to track sound settings for use in callbacks (avoids stale closure)
   const soundSettingsRef = useRef(soundSettings);
   useEffect(() => {
@@ -179,9 +194,13 @@ function App() {
           case 'listening':
             // Stop thinking sound if it was playing
             stopThinkingSound();
-            if (isListeningRef.current) {
+            // In wake word mode, don't show "Recording" overlay when returning to listening
+            // The mic is on for wake word detection, but we're not actively recording user speech
+            if (isListeningRef.current && !wakeWordAutoListeningRef.current) {
+              // Manual listening mode - show recording overlay
               setState(AppState.LISTENING);
             } else {
+              // Wake word mode OR not listening - set to IDLE (no overlay)
               setState(AppState.IDLE);
             }
             // Safeguard: If in wake word mode and receiving 'listening' status,
@@ -267,6 +286,8 @@ function App() {
         });
         break;
       case 'response_token':
+        // Stop thinking sound as soon as response starts streaming
+        stopThinkingSound();
         setStreamingContent((prev) => prev + message.token);
         break;
       case 'response_end':
@@ -563,6 +584,45 @@ function App() {
     }
   }, [createConversation, isConnected, sendSetConversation, sendClearHistory]);
 
+  // Handle selecting a search result - navigate to conversation and scroll to message
+  const handleSelectSearchResult = useCallback(async (conversationId: string, messageIndex: number, messageId: string) => {
+    // Clear scroll target first to ensure re-trigger works
+    setScrollToMessageIndex(null);
+    setHighlightMessageId(null);
+    
+    if (conversationId === activeConversationId) {
+      // Same conversation - just scroll to the message
+      // Use setTimeout to ensure state reset before setting new value
+      setTimeout(() => {
+        setScrollToMessageIndex(messageIndex);
+        setHighlightMessageId(messageId);
+      }, 50);
+    } else {
+      // Different conversation - load it first, then scroll
+      const loadedMessages = await selectConversation(conversationId);
+      setMessages(loadedMessages);
+      setStreamingContent('');
+      setMemoryUsage(null);
+      
+      // Notify backend about conversation switch
+      if (isConnected) {
+        sendSetConversation(conversationId);
+      }
+      
+      // Wait for messages to render, then scroll
+      setTimeout(() => {
+        setScrollToMessageIndex(messageIndex);
+        setHighlightMessageId(messageId);
+      }, 100);
+    }
+  }, [activeConversationId, selectConversation, isConnected, sendSetConversation]);
+
+  // Handle scroll complete - clear the scroll target
+  const handleScrollComplete = useCallback(() => {
+    setScrollToMessageIndex(null);
+    setHighlightMessageId(null);
+  }, []);
+
   // Initialize: Select or create a conversation when app loads
   useEffect(() => {
     if (!isLoadingConversations && !hasInitializedConversation.current) {
@@ -753,8 +813,9 @@ function App() {
     sendStop();
     clearAudioQueue();
     
-    // Also stop recording if active
-    if (isListening) {
+    // Also stop recording if active - BUT NOT in wake word mode
+    // In wake word mode, the mic needs to stay on to detect the wake word
+    if (isListening && !wakeWordAutoListeningRef.current) {
       isListeningRef.current = false;
       setIsListening(false);
       stopListening();
@@ -855,6 +916,14 @@ function App() {
         selectedVoice={selectedVoice}
         onVoiceChange={handleVoiceChange}
         isDisabled={isDisabled}
+        // Search props
+        searchQuery={searchQuery}
+        onSearchQueryChange={setSearchQuery}
+        searchResults={searchResults}
+        isSearching={isSearching}
+        hasSearched={hasSearched}
+        onClearSearch={clearSearch}
+        onSelectSearchResult={handleSelectSearchResult}
       />
 
       {/* Chat Settings Modal */}
@@ -950,6 +1019,9 @@ function App() {
           state={state}
           wakeWordEnabled={wakeWordSettings.enabled}
           wakeWordStatus={wakeWordStatus}
+          scrollToMessageIndex={scrollToMessageIndex}
+          highlightMessageId={highlightMessageId}
+          onScrollComplete={handleScrollComplete}
         />
 
         <ControlBar

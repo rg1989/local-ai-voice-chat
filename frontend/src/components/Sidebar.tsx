@@ -1,5 +1,7 @@
-import { ConversationSummary } from '../types';
+import { useRef } from 'react';
+import { ConversationSummary, SearchResult } from '../types';
 import { ConversationItem } from './ConversationItem';
+import { SearchResultsList } from './SearchResultsList';
 
 interface SidebarProps {
   conversations: ConversationSummary[];
@@ -19,6 +21,14 @@ interface SidebarProps {
   selectedVoice: string;
   onVoiceChange: (voice: string) => void;
   isDisabled: boolean;
+  // Search props
+  searchQuery: string;
+  onSearchQueryChange: (query: string) => void;
+  searchResults: SearchResult[];
+  isSearching: boolean;
+  hasSearched: boolean;
+  onClearSearch: () => void;
+  onSelectSearchResult: (conversationId: string, messageIndex: number, messageId: string) => void;
 }
 
 // Plus icon for new conversation
@@ -67,6 +77,24 @@ function SettingsIcon() {
   );
 }
 
+// Search icon
+function SearchIcon() {
+  return (
+    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+    </svg>
+  );
+}
+
+// X/Close icon
+function CloseIcon() {
+  return (
+    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+    </svg>
+  );
+}
+
 export function Sidebar({
   conversations,
   activeConversationId,
@@ -84,11 +112,29 @@ export function Sidebar({
   selectedVoice,
   onVoiceChange,
   isDisabled,
+  // Search props
+  searchQuery,
+  onSearchQueryChange,
+  searchResults,
+  isSearching,
+  hasSearched,
+  onClearSearch,
+  onSelectSearchResult,
 }: SidebarProps) {
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const isSearchActive = searchQuery.trim().length > 0;
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      onClearSearch();
+      searchInputRef.current?.blur();
+    }
+  };
+
   return (
     <aside className="w-72 bg-[#1e2227] border-r border-slate-700/50 flex flex-col h-screen">
       {/* Header with new conversation button */}
-      <div className="p-4 border-b border-slate-700/50">
+      <div className="p-4 border-b border-slate-700/50 space-y-3">
         <button
           onClick={onNewConversation}
           className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-medium transition-colors cursor-pointer"
@@ -96,11 +142,49 @@ export function Sidebar({
           <PlusIcon />
           <span>New Chat</span>
         </button>
+
+        {/* Search input */}
+        <div className="relative">
+          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+            <SearchIcon />
+          </div>
+          <input
+            ref={searchInputRef}
+            type="text"
+            value={searchQuery}
+            onChange={(e) => onSearchQueryChange(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Search messages..."
+            className="w-full bg-slate-800/50 border border-slate-600/50 rounded-lg pl-9 pr-8 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/30 transition-colors"
+          />
+          {isSearchActive && (
+            <button
+              onClick={onClearSearch}
+              className="absolute inset-y-0 right-0 pr-2 flex items-center text-slate-400 hover:text-white transition-colors cursor-pointer"
+            >
+              <CloseIcon />
+            </button>
+          )}
+          {isSearching && (
+            <div className="absolute inset-y-0 right-0 pr-2 flex items-center">
+              <div className="w-4 h-4 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Conversation list */}
+      {/* Conversation list or Search results */}
       <div className="flex-1 overflow-y-auto">
-        {isLoading ? (
+        {isSearchActive ? (
+          <SearchResultsList
+            results={searchResults}
+            query={searchQuery}
+            isSearching={isSearching}
+            hasSearched={hasSearched}
+            activeConversationId={activeConversationId}
+            onSelectResult={onSelectSearchResult}
+          />
+        ) : isLoading ? (
           <div className="flex items-center justify-center py-12">
             <div className="w-6 h-6 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
           </div>

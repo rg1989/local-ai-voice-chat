@@ -104,7 +104,7 @@ function TranscribingUserAvatar() {
   );
 }
 
-// Typing dots animation
+// Typing dots animation (for "Thinking..." state)
 function TypingDots() {
   return (
     <div className="flex items-center gap-1">
@@ -112,6 +112,18 @@ function TypingDots() {
       <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
       <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
     </div>
+  );
+}
+
+// Inline streaming dots - appears at end of streaming text
+function StreamingDots({ color = 'emerald' }: { color?: 'emerald' | 'amber' }) {
+  const bgClass = color === 'amber' ? 'bg-amber-400' : 'bg-emerald-400';
+  return (
+    <span className="inline-flex items-center gap-0.5 ml-1 align-baseline">
+      <span className={`inline-block w-1 h-1 ${bgClass} rounded-full animate-streaming-dot`} style={{ animationDelay: '0ms' }} />
+      <span className={`inline-block w-1 h-1 ${bgClass} rounded-full animate-streaming-dot`} style={{ animationDelay: '200ms' }} />
+      <span className={`inline-block w-1 h-1 ${bgClass} rounded-full animate-streaming-dot`} style={{ animationDelay: '400ms' }} />
+    </span>
   );
 }
 
@@ -528,7 +540,7 @@ export const ChatMessages = memo(function ChatMessages({
                       <div className="flex items-center gap-2 text-amber-400 text-sm font-medium">
                         <ToolIcon />
                         <span>Using tool: {getStreamingToolName(streamingContent) || '...'}()</span>
-                        <span className="inline-block w-2 h-4 bg-amber-500 animate-pulse rounded-sm" />
+                        <StreamingDots color="amber" />
                       </div>
                       {getStreamingToolArgs(streamingContent) && (
                         <div className="mt-2 text-xs text-slate-400 font-mono bg-slate-800/50 rounded px-2 py-1">
@@ -537,9 +549,9 @@ export const ChatMessages = memo(function ChatMessages({
                       )}
                     </div>
                   ) : (
-                    <div className="relative">
+                    <div className="streaming-content">
                       <MarkdownRenderer content={streamingContent} isStreaming={true} onContentChange={scrollToBottom} />
-                      <span className="inline-block w-2 h-4 bg-emerald-500 ml-1 animate-pulse rounded-sm align-middle" />
+                      <StreamingDots color="emerald" />
                     </div>
                   )}
                 </div>

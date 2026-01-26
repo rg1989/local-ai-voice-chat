@@ -3,11 +3,42 @@
 import asyncio
 import base64
 import json
+import re
 import time
 from pathlib import Path
 from typing import Optional
 
 import numpy as np
+
+
+def is_speakable(text: str) -> bool:
+    """Check if text is primarily Latin characters (speakable by TTS).
+    
+    Kokoro TTS doesn't support non-Latin scripts well - it reads Hebrew, Arabic,
+    Chinese etc. characters as their Unicode names (e.g., "Hebrew Shin" instead of "ש").
+    
+    This function detects if text is speakable by checking if it's predominantly Latin.
+    
+    Args:
+        text: The text to check
+        
+    Returns:
+        True if the text is primarily Latin and can be spoken by TTS
+    """
+    # Remove common punctuation, spaces, and numbers
+    clean = re.sub(r'[\s\d!"#$%&\'()*+,\-./:;<=>?@\[\\\]^_`{|}~]', '', text)
+    if not clean:
+        return False  # Only punctuation/whitespace, skip TTS
+    
+    # Count Latin characters (Basic Latin + Latin Extended-A/B + Latin Extended Additional)
+    # Covers: a-z, A-Z, and accented characters like é, ñ, ü, etc.
+    latin_count = sum(1 for c in clean if (
+        '\u0000' <= c <= '\u024F' or  # Basic Latin through Latin Extended-B
+        '\u1E00' <= c <= '\u1EFF'      # Latin Extended Additional
+    ))
+    
+    # If more than 50% is Latin, it's speakable
+    return latin_count / len(clean) > 0.5
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Body, Query
 from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel
@@ -641,6 +672,12 @@ class VoiceChatSession:
                 return
         
         if not text.strip():
+            return
+        
+        # Skip non-Latin text (Hebrew, Arabic, Chinese, etc.) - TTS can't pronounce it
+        # Kokoro TTS reads these as Unicode character names like "Hebrew Shin" instead of the word
+        if not is_speakable(text):
+            print(f"[DEBUG] Non-Latin text detected, skipping TTS: {text[:50]}...")
             return
         
         await self.send_status("speaking")

@@ -91,7 +91,8 @@ export const MermaidDiagram = memo(function MermaidDiagram({ chart, isStreaming 
     hasPendingRender.current = true;
 
     // If streaming, wait longer before attempting render (debounce)
-    const delay = isStreaming ? 500 : 100;
+    // Use a longer delay to let more complete syntax accumulate and reduce failed parse attempts
+    const delay = isStreaming ? 800 : 100;
 
     renderTimeoutRef.current = window.setTimeout(async () => {
       // Generate a unique ID for each render attempt
@@ -100,6 +101,20 @@ export const MermaidDiagram = memo(function MermaidDiagram({ chart, isStreaming 
       try {
         setIsRendering(true);
         setHasError(false);
+        
+        // Validate syntax BEFORE rendering to prevent Mermaid from creating error elements
+        // mermaid.parse() throws if syntax is invalid, but doesn't render anything
+        try {
+          await mermaid.parse(chart);
+        } catch {
+          // Syntax is invalid - during streaming this is expected, just wait for more content
+          if (!isStreaming && !lastSuccessfulChartRef.current) {
+            setHasError(true);
+          }
+          hasPendingRender.current = false;
+          setIsRendering(false);
+          return; // Don't attempt render with invalid syntax
+        }
         
         const { svg: renderedSvg } = await mermaid.render(renderId, chart);
         setSvg(renderedSvg);

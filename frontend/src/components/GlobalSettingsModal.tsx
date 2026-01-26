@@ -136,7 +136,7 @@ export function GlobalSettingsModal({
       {/* Modal */}
       <div className="relative bg-slate-800 rounded-2xl shadow-2xl w-full max-w-lg mx-4 border border-slate-700/50 max-h-[85vh] flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700/50 shrink-0">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-violet-500/20 shrink-0">
           <div>
             <h2 className="text-lg font-semibold text-white">Global Settings</h2>
             <p className="text-sm text-slate-400 mt-0.5">
@@ -145,7 +145,7 @@ export function GlobalSettingsModal({
           </div>
           <button
             onClick={onClose}
-            className="p-2 text-slate-400 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors"
+            className="p-2 text-slate-400 hover:text-violet-400 hover:bg-violet-500/10 rounded-lg transition-colors cursor-pointer"
           >
             <CloseIcon />
           </button>
@@ -155,7 +155,7 @@ export function GlobalSettingsModal({
         <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
           {/* Tools Section */}
           <div>
-            <h3 className="text-sm font-medium text-slate-300 mb-3 flex items-center gap-2">
+            <h3 className="text-sm font-medium text-violet-400 mb-3 flex items-center gap-2">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -182,7 +182,7 @@ export function GlobalSettingsModal({
 
           {/* Global Rules Section */}
           <div>
-            <h3 className="text-sm font-medium text-slate-300 mb-3 flex items-center gap-2">
+            <h3 className="text-sm font-medium text-violet-400 mb-3 flex items-center gap-2">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
@@ -200,7 +200,7 @@ Examples:
 • You are a helpful coding assistant
 • Respond in a friendly tone
 • Prefer TypeScript over JavaScript"
-              className="w-full h-36 px-4 py-3 bg-slate-900/50 border border-slate-600/50 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/25 resize-none"
+              className="w-full h-36 px-4 py-3 bg-slate-900/50 border border-violet-500/30 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/25 resize-none"
             />
             <p className="text-xs text-slate-500 mt-2">
               These rules apply to all conversations. Chat-specific rules take priority.
@@ -209,17 +209,17 @@ Examples:
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-700/50 shrink-0">
+        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-violet-500/20 shrink-0">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-slate-300 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors"
+            className="px-4 py-2 text-sm font-medium text-slate-300 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors cursor-pointer"
           >
             Close
           </button>
           <button
             onClick={handleSaveRules}
             disabled={isSaving || rules === globalRules}
-            className="px-4 py-2 text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-4 py-2 text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
           >
             {isSaving ? 'Saving...' : 'Save Rules'}
           </button>

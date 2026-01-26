@@ -81,7 +81,7 @@ export function ChatSettingsModal({
       {/* Modal */}
       <div className="relative bg-slate-800 rounded-2xl shadow-2xl w-full max-w-lg mx-4 border border-slate-700/50">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-700/50">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-violet-500/20">
           <div>
             <h2 className="text-lg font-semibold text-white">Chat Settings</h2>
             <p className="text-sm text-slate-400 mt-0.5">
@@ -90,7 +90,7 @@ export function ChatSettingsModal({
           </div>
           <button
             onClick={onClose}
-            className="p-2 text-slate-400 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors"
+            className="p-2 text-slate-400 hover:text-violet-400 hover:bg-violet-500/10 rounded-lg transition-colors cursor-pointer"
           >
             <CloseIcon />
           </button>
@@ -98,7 +98,7 @@ export function ChatSettingsModal({
 
         {/* Content */}
         <div className="px-6 py-4">
-          <label className="block text-sm font-medium text-slate-300 mb-2">
+          <label className="block text-sm font-medium text-violet-400 mb-2">
             Custom Rules
           </label>
           <textarea
@@ -113,26 +113,26 @@ Examples:
 • You are a Python expert
 • Keep responses under 100 words
 • Explain things simply"
-            className="w-full h-48 px-4 py-3 bg-slate-900/50 border border-slate-600/50 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/25 resize-none"
+            className="w-full h-48 px-4 py-3 bg-slate-900/50 border border-violet-500/30 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/25 resize-none"
           />
           <p className="text-xs text-slate-500 mt-2">
             These rules will be applied to every response in this chat.
-            Press <kbd className="px-1.5 py-0.5 bg-slate-700 rounded text-slate-300">Cmd+Enter</kbd> to save.
+            Press <kbd className="px-1.5 py-0.5 bg-violet-900/50 border border-violet-500/30 rounded text-violet-300">Cmd+Enter</kbd> to save.
           </p>
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-700/50">
+        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-violet-500/20">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm font-medium text-slate-300 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors"
+            className="px-4 py-2 text-sm font-medium text-slate-300 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors cursor-pointer"
           >
             Cancel
           </button>
           <button
             onClick={handleSave}
             disabled={isSaving}
-            className="px-4 py-2 text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-4 py-2 text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-500 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
           >
             {isSaving ? 'Saving...' : 'Save Rules'}
           </button>

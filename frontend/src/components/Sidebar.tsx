@@ -180,7 +180,7 @@ export function Sidebar({
       {/* Author footer */}
       <div className="px-3 py-2 border-t border-slate-700/50">
         <div className="flex items-center justify-center gap-3">
-          <span className="text-slate-500 text-xs">by Roman Grinevich</span>
+          <span className="text-xs neon-rainbow">by Roman Grinevich</span>
           <div className="flex items-center gap-2">
             <a
               href="https://github.com/rg1989"

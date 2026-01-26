@@ -99,6 +99,43 @@ body {
   background-clip: text;
 }
 
+/* Rainbow neon glow animation */
+@keyframes neon-rainbow {
+  0% {
+    color: #a78bfa;
+    text-shadow: 0 0 4px rgba(167, 139, 250, 0.5);
+  }
+  16% {
+    color: #f472b6;
+    text-shadow: 0 0 4px rgba(244, 114, 182, 0.5);
+  }
+  33% {
+    color: #fb7185;
+    text-shadow: 0 0 4px rgba(251, 113, 133, 0.5);
+  }
+  50% {
+    color: #fbbf24;
+    text-shadow: 0 0 4px rgba(251, 191, 36, 0.5);
+  }
+  66% {
+    color: #34d399;
+    text-shadow: 0 0 4px rgba(52, 211, 153, 0.5);
+  }
+  83% {
+    color: #38bdf8;
+    text-shadow: 0 0 4px rgba(56, 189, 248, 0.5);
+  }
+  100% {
+    color: #a78bfa;
+    text-shadow: 0 0 4px rgba(167, 139, 250, 0.5);
+  }
+}
+
+.neon-rainbow {
+  animation: neon-rainbow 3s ease-in-out infinite;
+  font-weight: 500;
+}
+
 /* Glass effect for cards */
 .glass-card {
   background: rgba(30, 34, 39, 0.8);

@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { ConversationSummary } from '../types';
+import { ConfirmModal } from './ConfirmModal';
 
 interface ConversationItemProps {
   conversation: ConversationSummary;
@@ -74,6 +75,7 @@ export function ConversationItem({
 }: ConversationItemProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(conversation.title || 'New Conversation');
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Focus input when editing starts
@@ -89,11 +91,14 @@ export function ConversationItem({
     setEditTitle(conversation.title || 'New Conversation');
   }, [conversation.title]);
 
-  const handleDelete = (e: React.MouseEvent) => {
+  const handleDeleteClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (confirm('Delete this conversation?')) {
-      onDelete();
-    }
+    setShowDeleteConfirm(true);
+  };
+
+  const handleConfirmDelete = () => {
+    setShowDeleteConfirm(false);
+    onDelete();
   };
 
   const handleEdit = (e: React.MouseEvent) => {
@@ -211,7 +216,7 @@ export function ConversationItem({
                 </>
               )}
               <button
-                onClick={handleDelete}
+                onClick={handleDeleteClick}
                 className="p-1 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded transition-all cursor-pointer"
                 title="Delete conversation"
               >
@@ -221,6 +226,18 @@ export function ConversationItem({
           </div>
         </div>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      <ConfirmModal
+        isOpen={showDeleteConfirm}
+        title="Delete Conversation"
+        message="Are you sure you want to delete this conversation? This action cannot be undone."
+        confirmLabel="Delete"
+        cancelLabel="Cancel"
+        variant="danger"
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setShowDeleteConfirm(false)}
+      />
     </div>
   );
 }

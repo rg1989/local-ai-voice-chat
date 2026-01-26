@@ -1,139 +1,271 @@
 # Local Voice Chatbot
 
-A fully local voice assistant that runs entirely on your Mac, powered by:
-- **Qwen3-8B** - Conversational LLM via Ollama
-- **MLX Whisper** - Fast speech-to-text optimized for Apple Silicon
-- **Kokoro** - Natural text-to-speech with multiple voices
-- **Silero VAD** - Voice activity detection
+<p align="center">
+  <strong>A fully local, privacy-first voice assistant for macOS</strong>
+</p>
 
-No cloud services, no API keys, complete privacy.
+<p align="center">
+  <a href="#features">Features</a> •
+  <a href="#requirements">Requirements</a> •
+  <a href="#quick-start">Quick Start</a> •
+  <a href="#installation">Installation</a> •
+  <a href="#usage">Usage</a> •
+  <a href="#configuration">Configuration</a> •
+  <a href="#troubleshooting">Troubleshooting</a>
+</p>
+
+---
+
+## Overview
+
+Local Voice Chatbot is a fully offline voice assistant that runs entirely on your Mac. It combines state-of-the-art open-source models to deliver a natural conversational experience without sending any data to the cloud.
+
+**Key Technologies:**
+- **Ollama + Qwen3-8B** — Conversational LLM for intelligent responses
+- **MLX Whisper** — Fast speech-to-text optimized for Apple Silicon
+- **Kokoro** — Natural text-to-speech with multiple voice options
+- **Silero VAD** — Accurate voice activity detection
+
+> **No cloud services. No API keys. Complete privacy.**
+
+---
 
 ## Features
 
-- **Sub-second latency** - Streaming architecture for natural conversations
-- **Voice & text modes** - Use microphone or type your messages
-- **Web interface** - Beautiful browser-based UI
-- **Multiple voices** - Choose from American and British English voices
-- **Conversation memory** - Maintains context across the chat session
+| Feature | Description |
+|---------|-------------|
+| **Sub-second Latency** | Streaming architecture enables natural, real-time conversations |
+| **Voice & Text Modes** | Use microphone input or type your messages |
+| **Modern Web Interface** | Beautiful React-based UI with dark theme |
+| **Multiple Voices** | Choose from American and British English voices |
+| **Conversation Memory** | Maintains context throughout your chat session |
+| **100% Offline** | All processing happens locally on your machine |
+
+---
 
 ## Requirements
 
-- **macOS** with Apple Silicon (M1/M2/M3) recommended
-- **16GB RAM** (8GB works with smaller models)
-- **Python 3.10+**
-- **~10GB disk space** for models
+### System Requirements
+
+| Requirement | Minimum | Recommended |
+|-------------|---------|-------------|
+| **Operating System** | macOS 12+ | macOS 14+ |
+| **Processor** | Apple Silicon (M1) | M2/M3/M4 |
+| **RAM** | 8GB | 16GB+ |
+| **Disk Space** | 10GB | 15GB |
+| **Python** | 3.10 | 3.12+ |
+
+> **Note:** Intel Macs are supported but will have reduced performance. 8GB RAM users should use smaller models (see [Configuration](#alternative-models)).
+
+### Required Software
+
+| Software | Purpose | Installation |
+|----------|---------|--------------|
+| **Ollama** | LLM inference engine | `brew install ollama` |
+| **Node.js** | Frontend development | `brew install node` |
+| **Homebrew** | Package manager | [brew.sh](https://brew.sh) |
+
+---
+
+## Ollama Setup (Required)
+
+**Ollama is required to run the chatbot.** It provides the LLM backend that powers all conversations.
+
+### Step 1: Install Ollama
+
+```bash
+brew install ollama
+```
+
+Or download directly from [ollama.com](https://ollama.com).
+
+### Step 2: Start Ollama Service
+
+```bash
+ollama serve
+```
+
+> **Tip:** Ollama runs as a background service. You can also configure it to start automatically on login.
+
+### Step 3: Download a Model
+
+```bash
+# Recommended model (requires 16GB RAM)
+ollama pull qwen3:8b
+
+# Alternative for 8GB RAM systems
+ollama pull llama3.2:3b
+```
+
+### Verify Installation
+
+```bash
+# Check if Ollama is running
+curl http://localhost:11434/api/tags
+
+# List installed models
+ollama list
+```
+
+> **Important:** The chatbot will not function without Ollama running and at least one model installed. Ensure Ollama is started before launching the application.
+
+---
 
 ## Quick Start
 
-### Option A: One-Command Start (Recommended)
+### One-Command Start (Recommended)
 
 ```bash
 ./start.sh
 ```
 
-This single script will:
-- Set up Python environment (if needed)
-- Install frontend dependencies (if needed)
-- Check/start Ollama and download models
-- Start both backend and frontend servers
-- Display the URL to open in your browser
+This script automatically:
+1. Creates Python virtual environment (if needed)
+2. Installs frontend dependencies (if needed)
+3. Verifies Ollama is running and model is available
+4. Starts the backend API server
+5. Starts the frontend development server
+6. Opens the application at `http://localhost:5173`
 
-### Option B: Manual Setup
+Press `Ctrl+C` to stop all services.
 
-#### 1. Run the setup script
+---
+
+## Installation
+
+### Automated Installation
 
 ```bash
+# Make the setup script executable
 chmod +x scripts/setup_models.sh
+
+# Run the setup script
 ./scripts/setup_models.sh
 ```
 
-This will:
+The setup script will:
 - Install Homebrew packages (portaudio, ffmpeg)
 - Install and configure Ollama
 - Download the Qwen3-8B model
 - Set up Python environment with uv
+- Pre-download ML models for faster first launch
 
-#### 2. Activate the environment
+### Manual Installation
+
+#### 1. Install System Dependencies
 
 ```bash
-source .venv/bin/activate
+# Install Homebrew if not already installed
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+# Install required packages
+brew install portaudio ffmpeg ollama node
 ```
 
-#### 3. Start chatting
+#### 2. Configure Ollama
 
 ```bash
-# Voice mode (requires microphone)
-python -m src.main
+# Start Ollama service
+ollama serve
 
-# Text mode (no microphone needed)
-python -m src.main --text
-
-# Web interface (legacy HTML)
-python -m src.main --web
-
-# Web interface (React frontend - recommended)
-# Terminal 1: Start the backend
-python -m src.main --web
-
-# Terminal 2: Start the frontend
-cd frontend && npm run dev
-# Then open http://localhost:5173
-```
-
-## Manual Installation
-
-If you prefer to install manually:
-
-### System dependencies
-
-```bash
-brew install portaudio ffmpeg ollama
-```
-
-### Ollama model
-
-```bash
-ollama serve  # Start Ollama (run in background)
+# Download the recommended model (in a new terminal)
 ollama pull qwen3:8b
 ```
 
-### Python environment
+#### 3. Set Up Python Environment
+
+**Using uv (Recommended):**
 
 ```bash
-# Using uv (recommended)
+# Install uv package manager
 curl -LsSf https://astral.sh/uv/install.sh | sh
-uv venv
-uv pip install -e .
 
-# Or using pip
-python -m venv .venv
+# Create virtual environment
+uv venv
+
+# Activate environment
 source .venv/bin/activate
+
+# Install dependencies
+uv pip install -e .
+```
+
+**Using pip:**
+
+```bash
+# Create virtual environment
+python3 -m venv .venv
+
+# Activate environment
+source .venv/bin/activate
+
+# Install dependencies
 pip install -e .
 ```
 
+#### 4. Set Up Frontend
+
+```bash
+cd frontend
+npm install
+cd ..
+```
+
+#### 5. Verify Installation
+
+```bash
+source .venv/bin/activate
+python -m src.main --check
+```
+
+---
+
 ## Usage
 
-### CLI Options
+### Starting the Application
+
+**Full Stack (Recommended):**
+
+```bash
+./start.sh
+```
+
+Then open `http://localhost:5173` in your browser.
+
+**Manual Start:**
+
+```bash
+# Terminal 1: Start backend
+source .venv/bin/activate
+python -m src.main --web
+
+# Terminal 2: Start frontend
+cd frontend
+npm run dev
+```
+
+### Command Line Interface
 
 ```bash
 python -m src.main [OPTIONS]
-
-Options:
-  --text, -t      Use text input instead of voice
-  --no-tts        Disable text-to-speech output
-  --web, -w       Start web interface
-  --host HOST     Web server host (default: 0.0.0.0)
-  --port, -p PORT Web server port (default: 8000)
-  --check         Check system requirements
-  --list-devices  List audio devices
-  --list-voices   List available TTS voices
-  --help          Show help message
 ```
+
+| Option | Short | Description |
+|--------|-------|-------------|
+| `--text` | `-t` | Use text input instead of voice |
+| `--no-tts` | | Disable text-to-speech output |
+| `--web` | `-w` | Start web interface |
+| `--host HOST` | | Web server host (default: 0.0.0.0) |
+| `--port PORT` | `-p` | Web server port (default: 8000) |
+| `--check` | | Check system requirements |
+| `--list-devices` | | List available audio devices |
+| `--list-voices` | | List available TTS voices |
+| `--help` | | Show help message |
 
 ### Examples
 
 ```bash
-# Start voice chat
+# Voice chat (requires microphone)
 python -m src.main
 
 # Text chat with speech output
@@ -145,50 +277,84 @@ python -m src.main --text --no-tts
 # Web interface on custom port
 python -m src.main --web --port 3000
 
-# Check if everything is set up correctly
+# Check system requirements
 python -m src.main --check
 ```
 
+---
+
 ## Configuration
 
-Create a `.env` file in the project root to customize settings:
+### Environment Variables
 
-```env
-# LLM settings
-LLM_MODEL_NAME=qwen3:8b
-LLM_TEMPERATURE=0.7
-LLM_MAX_TOKENS=512
+Create a `.env` file in the project root to customize settings. Copy from the provided example:
 
-# TTS settings
-TTS_VOICE=af_heart
-TTS_SPEED=1.0
-
-# Audio settings
-AUDIO_SAMPLE_RATE=16000
-
-# VAD settings
-VAD_THRESHOLD=0.5
-VAD_MIN_SILENCE_DURATION_MS=500
-
-# Web server
-WEB_HOST=0.0.0.0
-WEB_PORT=8000
-
-# Debug
-DEBUG=false
+```bash
+cp .env.example .env
 ```
 
-## Available Voices
+### LLM Settings
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LLM_BASE_URL` | `http://localhost:11434` | Ollama API endpoint |
+| `LLM_MODEL_NAME` | `qwen3:8b` | Model to use for chat |
+| `LLM_TEMPERATURE` | `0.7` | Response creativity (0.0-1.0) |
+| `LLM_MAX_TOKENS` | `512` | Maximum response length |
+
+### Speech-to-Text Settings
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `STT_MODEL_NAME` | `mlx-community/whisper-large-v3-turbo` | Whisper model variant |
+| `STT_LANGUAGE` | `en` | Language for transcription |
+
+### Text-to-Speech Settings
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TTS_VOICE` | `af_heart` | Voice selection (see below) |
+| `TTS_SPEED` | `1.0` | Speech speed multiplier |
+| `TTS_OUTPUT_SAMPLE_RATE` | `24000` | Audio sample rate |
+
+### Available Voices
 
 | Voice ID | Description |
 |----------|-------------|
 | `af_heart` | American Female - Heart (warm, friendly) |
 | `af_bella` | American Female - Bella |
 | `af_sarah` | American Female - Sarah |
+| `af_nicole` | American Female - Nicole |
+| `af_sky` | American Female - Sky |
 | `am_adam` | American Male - Adam |
 | `am_michael` | American Male - Michael |
 | `bf_emma` | British Female - Emma |
+| `bf_isabella` | British Female - Isabella |
 | `bm_george` | British Male - George |
+| `bm_lewis` | British Male - Lewis |
+
+### Voice Activity Detection
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `VAD_THRESHOLD` | `0.5` | Speech detection sensitivity |
+| `VAD_MIN_SPEECH_DURATION_MS` | `250` | Minimum speech duration |
+| `VAD_MIN_SILENCE_DURATION_MS` | `500` | Silence before end of speech |
+| `VAD_SPEECH_PAD_MS` | `30` | Padding around speech |
+
+### Alternative Models
+
+For systems with limited RAM:
+
+```bash
+# 8GB RAM - Use smaller model
+ollama pull llama3.2:3b
+
+# Update .env
+LLM_MODEL_NAME=llama3.2:3b
+```
+
+---
 
 ## Architecture
 
@@ -212,81 +378,39 @@ DEBUG=false
 
 ### Streaming Pipeline
 
-The key to low latency is streaming at every stage:
+The key to achieving low latency is streaming at every stage:
 
-1. **VAD** detects when you start/stop speaking
-2. **STT** transcribes your speech as audio arrives
-3. **LLM** streams tokens as they're generated
-4. **Sentencizer** buffers tokens until a sentence is complete
-5. **TTS** speaks each sentence while the LLM continues generating
+1. **VAD** — Detects when you start and stop speaking
+2. **STT** — Transcribes speech as audio arrives
+3. **LLM** — Streams tokens as they're generated
+4. **Sentencizer** — Buffers tokens until a sentence is complete
+5. **TTS** — Speaks each sentence while LLM continues generating
 
-This allows the bot to start speaking before it finishes thinking!
+> This architecture allows the assistant to start speaking before it finishes thinking, creating a natural conversational flow.
 
-## Troubleshooting
+---
 
-### "Ollama not running"
-
-Start Ollama in a terminal:
-```bash
-ollama serve
-```
-
-### "No audio devices found"
-
-Make sure portaudio is installed:
-```bash
-brew install portaudio
-```
-
-Then reinstall sounddevice:
-```bash
-uv pip install --force-reinstall sounddevice
-```
-
-### "Model not found"
-
-Download the model:
-```bash
-ollama pull qwen3:8b
-```
-
-### Slow performance
-
-1. Make sure you're using Apple Silicon (not Rosetta)
-2. Close other memory-intensive apps
-3. Try a smaller model: `ollama pull llama3.2:3b`
-
-### High memory usage
-
-The models require significant RAM:
-- Qwen3-8B (4-bit): ~5GB
-- Whisper: ~1.5GB
-- Kokoro: ~100MB
-- System overhead: ~2GB
-
-For 8GB Macs, use `llama3.2:3b` instead.
-
-## Development
-
-### Project Structure
+## Project Structure
 
 ```
 local-voice-chatbot/
 ├── src/                      # Python backend
-│   ├── main.py               # Entry point
-│   ├── config.py             # Settings
+│   ├── main.py               # Application entry point
+│   ├── config.py             # Settings and configuration
 │   ├── pipeline/
 │   │   ├── vad.py            # Voice activity detection
-│   │   ├── stt.py            # Speech-to-text
-│   │   ├── llm.py            # LLM client
-│   │   ├── tts.py            # Text-to-speech
-│   │   └── sentencizer.py
+│   │   ├── stt.py            # Speech-to-text (Whisper)
+│   │   ├── llm.py            # LLM client (Ollama)
+│   │   ├── tts.py            # Text-to-speech (Kokoro)
+│   │   └── sentencizer.py    # Sentence boundary detection
 │   ├── audio/
 │   │   ├── capture.py        # Microphone input
 │   │   └── playback.py       # Speaker output
-│   └── interfaces/
-│       ├── cli.py            # Terminal interface
-│       └── web.py            # Web API + WebSocket
+│   ├── interfaces/
+│   │   ├── cli.py            # Terminal interface
+│   │   └── web.py            # Web API + WebSocket
+│   └── storage/
+│       └── conversations.py  # Conversation persistence
 ├── frontend/                 # React frontend
 │   ├── src/
 │   │   ├── App.tsx           # Main application
@@ -299,52 +423,185 @@ local-voice-chatbot/
 ├── web/
 │   └── index.html            # Legacy Web UI
 ├── scripts/
-│   └── setup_models.sh       # Setup script
-├── pyproject.toml
+│   └── setup_models.sh       # Automated setup script
+├── start.sh                  # One-command start script
+├── pyproject.toml            # Python project configuration
 └── README.md
 ```
 
-### Running in Development Mode
+---
 
-**Backend only (legacy UI):**
+## Troubleshooting
+
+### Ollama Issues
+
+**"Ollama not running"**
+
 ```bash
-python -m src.main --web --reload
+# Start Ollama service
+ollama serve
+
+# Verify it's running
+curl http://localhost:11434/api/tags
 ```
 
-**Full stack (React frontend - recommended):**
-```bash
-# Terminal 1: Backend API server
-python -m src.main --web
+**"Model not found"**
 
-# Terminal 2: Frontend dev server with hot reload
+```bash
+# List available models
+ollama list
+
+# Download the required model
+ollama pull qwen3:8b
+```
+
+### Audio Issues
+
+**"No audio devices found"**
+
+```bash
+# Install portaudio
+brew install portaudio
+
+# Reinstall sounddevice
+source .venv/bin/activate
+pip install --force-reinstall sounddevice
+```
+
+**"Microphone not working"**
+
+1. Check System Preferences → Privacy & Security → Microphone
+2. Ensure your terminal/browser has microphone permissions
+3. Run `python -m src.main --list-devices` to verify device detection
+
+### Performance Issues
+
+**Slow response times:**
+
+1. Verify you're running on Apple Silicon (not Rosetta)
+2. Close memory-intensive applications
+3. Consider using a smaller model: `ollama pull llama3.2:3b`
+
+**High memory usage:**
+
+Expected memory consumption:
+| Component | Memory Usage |
+|-----------|--------------|
+| Qwen3-8B (4-bit) | ~5GB |
+| Whisper | ~1.5GB |
+| Kokoro | ~100MB |
+| System overhead | ~2GB |
+
+For 8GB Macs, switch to `llama3.2:3b` model.
+
+### Frontend Issues
+
+**"Frontend failed to start"**
+
+```bash
+# Check for errors in the log
+cat /tmp/voice-chatbot-frontend.log
+
+# Reinstall dependencies
 cd frontend
-npm install  # First time only
-npm run dev
+rm -rf node_modules package-lock.json
+npm install
 ```
 
-The frontend runs on `http://localhost:5173` and proxies API/WebSocket requests to the backend on port 8000.
+**Port already in use:**
+
+```bash
+# Kill processes on the ports
+lsof -ti:8000 | xargs kill -9
+lsof -ti:5173 | xargs kill -9
+```
+
+---
+
+## Development
+
+### Backend Development
+
+```bash
+# Activate environment
+source .venv/bin/activate
+
+# Run with auto-reload (for development)
+python -m src.main --web --reload
+
+# Run tests
+pytest
+
+# Lint code
+ruff check src/
+```
 
 ### Frontend Development
 
-The React frontend uses:
-- **Vite** - Fast build tool with hot reload
-- **TypeScript** - Type-safe JavaScript
-- **Tailwind CSS** - Utility-first styling
+```bash
+cd frontend
 
-Key features:
-- Modern dark theme UI
-- Real-time audio streaming via WebSocket
-- Stop button to cancel ongoing responses
-- Visual status indicators for each state
-- Responsive design for all screen sizes
+# Start development server with hot reload
+npm run dev
+
+# Build for production
+npm run build
+
+# Lint code
+npm run lint
+```
+
+### Tech Stack
+
+**Backend:**
+- FastAPI — Web framework
+- Uvicorn — ASGI server
+- WebSockets — Real-time communication
+
+**Frontend:**
+- React — UI library
+- TypeScript — Type-safe JavaScript
+- Vite — Build tool
+- Tailwind CSS — Styling
+
+---
 
 ## License
 
-MIT License - feel free to use and modify for your projects.
+MIT License — feel free to use and modify for your projects.
+
+---
 
 ## Acknowledgments
 
-- [Ollama](https://ollama.ai/) for easy local LLM deployment
-- [MLX](https://github.com/ml-explore/mlx) for Apple Silicon optimization
-- [Kokoro](https://github.com/hexgrad/kokoro) for amazing TTS
-- [Silero VAD](https://github.com/snakers4/silero-vad) for voice detection
+This project builds on these amazing open-source projects:
+
+- [Ollama](https://ollama.com) — Easy local LLM deployment
+- [MLX](https://github.com/ml-explore/mlx) — Apple Silicon optimization
+- [Kokoro](https://github.com/hexgrad/kokoro) — High-quality TTS
+- [Silero VAD](https://github.com/snakers4/silero-vad) — Voice activity detection
+- [Faster Whisper](https://github.com/SYSTRAN/faster-whisper) — Efficient speech recognition
+
+---
+
+## Developed By
+
+<p align="center">
+  <strong>Roman Grinevich</strong>
+</p>
+
+<p align="center">
+  <a href="https://github.com/rg1989">
+    <img src="https://img.shields.io/badge/GitHub-rg1989-181717?style=for-the-badge&logo=github" alt="GitHub">
+  </a>
+  &nbsp;
+  <a href="https://www.linkedin.com/in/roman-grinevich-03b13bab/">
+    <img src="https://img.shields.io/badge/LinkedIn-Roman%20Grinevich-0A66C2?style=for-the-badge&logo=linkedin" alt="LinkedIn">
+  </a>
+</p>
+
+---
+
+<p align="center">
+  Made with ❤️ for the open-source community
+</p>

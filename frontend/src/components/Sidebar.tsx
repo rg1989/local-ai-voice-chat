@@ -9,6 +9,14 @@ interface SidebarProps {
   onNewConversation: () => void;
   onDeleteConversation: (id: string) => void;
   onRenameConversation: (id: string, newTitle: string) => void;
+  // Model/Voice selectors
+  models: string[];
+  selectedModel: string;
+  onModelChange: (model: string) => void;
+  voices: { id: string; name: string }[];
+  selectedVoice: string;
+  onVoiceChange: (voice: string) => void;
+  isDisabled: boolean;
 }
 
 // Plus icon for new conversation
@@ -37,6 +45,13 @@ export function Sidebar({
   onNewConversation,
   onDeleteConversation,
   onRenameConversation,
+  models,
+  selectedModel,
+  onModelChange,
+  voices,
+  selectedVoice,
+  onVoiceChange,
+  isDisabled,
 }: SidebarProps) {
   return (
     <aside className="w-72 bg-[#1e2227] border-r border-slate-700/50 flex flex-col h-screen">
@@ -79,19 +94,45 @@ export function Sidebar({
         )}
       </div>
 
-      {/* Footer */}
-      <div className="p-4 border-t border-slate-700/50">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center">
-            <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-            </svg>
+      {/* Footer with Model/Voice selectors */}
+      <div className="p-3 border-t border-slate-700/50 space-y-2">
+        {/* Model selector */}
+        {models.length > 0 && (
+          <div className="flex flex-col gap-1">
+            <label className="text-slate-500 text-xs font-medium uppercase tracking-wide px-1">Model</label>
+            <select
+              value={selectedModel}
+              onChange={(e) => onModelChange(e.target.value)}
+              disabled={isDisabled}
+              className="w-full bg-[#2a2d32] border border-slate-600/50 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500/50 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-colors truncate"
+            >
+              {models.map((model) => (
+                <option key={model} value={model}>
+                  {model}
+                </option>
+              ))}
+            </select>
           </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-slate-200 truncate">Local User</p>
-            <p className="text-xs text-slate-500">Voice Chatbot</p>
+        )}
+
+        {/* Voice selector */}
+        {voices.length > 0 && (
+          <div className="flex flex-col gap-1">
+            <label className="text-slate-500 text-xs font-medium uppercase tracking-wide px-1">Voice</label>
+            <select
+              value={selectedVoice}
+              onChange={(e) => onVoiceChange(e.target.value)}
+              disabled={isDisabled}
+              className="w-full bg-[#2a2d32] border border-slate-600/50 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500/50 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-colors"
+            >
+              {voices.map((voice) => (
+                <option key={voice.id} value={voice.id}>
+                  {voice.name}
+                </option>
+              ))}
+            </select>
           </div>
-        </div>
+        )}
       </div>
     </aside>
   );

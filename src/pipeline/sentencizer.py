@@ -21,8 +21,11 @@ class StreamingSentencizer:
     generating the full response, significantly reducing perceived latency.
     """
 
-    # Sentence-ending punctuation
+    # Sentence-ending punctuation (high priority)
     SENTENCE_ENDINGS = {'.', '!', '?'}
+    
+    # Clause-ending punctuation (lower priority, for earlier TTS)
+    CLAUSE_ENDINGS = {',', ':', ';', '—', '–'}
 
     # Patterns that should NOT trigger sentence end (abbreviations, etc.)
     ABBREVIATIONS = {
@@ -38,6 +41,7 @@ class StreamingSentencizer:
     def __init__(
         self,
         min_sentence_length: int = 10,
+        min_clause_length: int = 30,  # Minimum chars for clause break
         max_buffer_length: int = 500,
         on_sentence: Optional[Callable[[str], None]] = None,
     ):
@@ -45,10 +49,12 @@ class StreamingSentencizer:
 
         Args:
             min_sentence_length: Minimum characters before yielding a sentence
+            min_clause_length: Minimum characters before yielding on clause break
             max_buffer_length: Force yield if buffer exceeds this length
             on_sentence: Optional callback when a sentence is complete
         """
         self.min_sentence_length = min_sentence_length
+        self.min_clause_length = min_clause_length
         self.max_buffer_length = max_buffer_length
         self.on_sentence = on_sentence
 
@@ -91,6 +97,21 @@ class StreamingSentencizer:
                 return i + 1
         return None
 
+    def _find_clause_boundary(self, text: str) -> Optional[int]:
+        """Find the position of the last clause boundary (comma, colon, etc.).
+
+        Returns:
+            Index after the clause-ending punctuation, or None
+        """
+        for i in range(len(text) - 1, -1, -1):
+            if text[i] in self.CLAUSE_ENDINGS:
+                # Make sure there's a space after (natural break point)
+                if i + 1 < len(text) and text[i + 1] == ' ':
+                    return i + 1
+                elif i + 1 == len(text):
+                    return i + 1
+        return None
+
     def add_token(self, token: str) -> Optional[str]:
         """Add a token and return complete sentence if available.
 
@@ -102,7 +123,7 @@ class StreamingSentencizer:
         """
         self._buffer += token
 
-        # Check for sentence boundary
+        # First priority: Check for sentence boundary
         boundary = self._find_sentence_boundary(self._buffer)
 
         if boundary and boundary >= self.min_sentence_length:
@@ -113,6 +134,18 @@ class StreamingSentencizer:
                 self.on_sentence(sentence)
 
             return sentence
+
+        # Second priority: Check for clause boundary (for earlier TTS on long text)
+        if len(self._buffer) >= self.min_clause_length:
+            clause_boundary = self._find_clause_boundary(self._buffer)
+            if clause_boundary and clause_boundary >= self.min_clause_length:
+                clause = self._buffer[:clause_boundary].strip()
+                self._buffer = self._buffer[clause_boundary:].lstrip()
+
+                if self.on_sentence and clause:
+                    self.on_sentence(clause)
+
+                return clause
 
         # Force yield if buffer is too long (find last space)
         if len(self._buffer) > self.max_buffer_length:

@@ -38,15 +38,23 @@ class VADSettings(BaseSettings):
 
 
 class STTSettings(BaseSettings):
-    """Speech-to-Text settings."""
+    """Speech-to-Text settings (MLX Whisper - optimized for Apple Silicon).
+    
+    Note: MLX Whisper uses greedy decoding only (beam search not yet implemented).
+    This is already the fastest decoding method.
+    """
 
     model_config = SettingsConfigDict(env_prefix="STT_")
 
     model_name: str = Field(
-        default="large-v3-turbo",
-        description="Whisper model size (tiny, base, small, medium, large-v3, large-v3-turbo)",
+        default="mlx-community/whisper-large-v3-turbo",
+        description="MLX Whisper model (mlx-community/whisper-tiny, small, large-v3, large-v3-turbo)",
     )
     language: str = Field(default="en", description="Language code for transcription")
+    condition_on_previous_text: bool = Field(
+        default=False,
+        description="Condition on previous text (False=faster for single utterances)",
+    )
 
 
 class LLMSettings(BaseSettings):
@@ -77,7 +85,7 @@ class TTSSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="TTS_")
 
     voice: str = Field(default="af_heart", description="Kokoro voice to use")
-    speed: float = Field(default=1.0, description="Speech speed multiplier")
+    speed: float = Field(default=1.1, description="Speech speed multiplier (1.1 for snappier responses)")
     output_sample_rate: int = Field(default=24000, description="Output audio sample rate")
 
 

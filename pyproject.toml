@@ -14,8 +14,10 @@ dependencies = [
     "torch>=2.4.0",
     "torchaudio>=2.4.0",
     
-    # STT - using faster-whisper (CTranslate2 backend, no numba dependency)
-    "faster-whisper>=1.1.0",
+    # STT - using mlx-whisper (optimized for Apple Silicon)
+    "mlx-whisper>=0.4.0",
+    "numba>=0.59.0",  # Required for Python 3.12 compatibility
+    "llvmlite>=0.42.0",  # Required for Python 3.12 compatibility
     
     # LLM client
     "httpx>=0.27.0",

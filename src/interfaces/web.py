@@ -117,6 +117,9 @@ class VoiceChatSession:
         self._cancel_requested = False
         self._processing_task: Optional[asyncio.Task] = None
         
+        # TTS toggle (default enabled)
+        self._tts_enabled = True
+        
         # Conversation persistence
         self.conversation_id = conversation_id
         self._load_conversation_history()
@@ -315,6 +318,8 @@ class VoiceChatSession:
 
     async def synthesize_and_send(self, text: str) -> None:
         """Synthesize text and send audio to client."""
+        if not self._tts_enabled:
+            return  # Skip TTS when disabled
         await self.send_status("speaking")
         segment = await self.tts.synthesize_async(text)
         if len(segment.audio) > 0:
@@ -461,6 +466,11 @@ async def websocket_chat(websocket: WebSocket):
                     if conversation_id:
                         session.set_conversation(conversation_id)
                         await session.send_status("conversation_changed", {"conversation_id": conversation_id})
+
+                elif msg_type == "set_tts_enabled":
+                    enabled = data.get("enabled", True)
+                    session._tts_enabled = enabled
+                    await session.send_status("tts_enabled_changed", {"enabled": enabled})
 
     except WebSocketDisconnect:
         pass

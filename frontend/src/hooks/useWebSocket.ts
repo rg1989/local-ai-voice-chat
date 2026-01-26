@@ -100,6 +100,10 @@ export function useWebSocket({ onMessage, onOpen, onClose, onError }: UseWebSock
     sendJson({ type: 'set_conversation', conversation_id: conversationId });
   }, [sendJson]);
 
+  const sendSetTtsEnabled = useCallback((enabled: boolean) => {
+    sendJson({ type: 'set_tts_enabled', enabled });
+  }, [sendJson]);
+
   useEffect(() => {
     connect();
     return () => disconnect();
@@ -115,5 +119,6 @@ export function useWebSocket({ onMessage, onOpen, onClose, onError }: UseWebSock
     sendSetVoice,
     sendSetModel,
     sendSetConversation,
+    sendSetTtsEnabled,
   };
 }

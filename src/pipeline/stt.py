@@ -1,9 +1,12 @@
-"""Speech-to-Text using Faster Whisper (CTranslate2 backend)."""
+"""Speech-to-Text using MLX Whisper (optimized for Apple Silicon)."""
 
 from dataclasses import dataclass
 from typing import AsyncIterator, Optional
+import tempfile
+import os
 
 import numpy as np
+from scipy.io import wavfile
 
 from ..config import settings
 
@@ -19,16 +22,19 @@ class TranscriptionResult:
 
 
 class SpeechToText:
-    """Transcribes speech using Faster Whisper (CTranslate2 backend)."""
+    """Transcribes speech using MLX Whisper (optimized for Apple Silicon).
+    
+    MLX Whisper is ~2x faster than faster-whisper on Apple Silicon Macs.
+    """
 
-    # Available model sizes (speed vs accuracy tradeoff)
+    # Available models on Hugging Face (mlx-community)
     MODELS = {
-        "tiny": "Fastest, least accurate",
-        "base": "Fast, decent accuracy",
-        "small": "Good balance",
-        "medium": "High accuracy",
-        "large-v3": "Best accuracy",
-        "large-v3-turbo": "Fast and accurate, recommended",
+        "mlx-community/whisper-tiny": "Fastest, least accurate (~74MB)",
+        "mlx-community/whisper-base": "Fast, decent accuracy (~140MB)",
+        "mlx-community/whisper-small": "Good balance (~460MB)",
+        "mlx-community/whisper-medium": "High accuracy (~1.5GB)",
+        "mlx-community/whisper-large-v3": "Best accuracy (~3GB)",
+        "mlx-community/whisper-large-v3-turbo": "Fast and accurate, recommended (~1.5GB)",
     }
 
     def __init__(
@@ -39,35 +45,28 @@ class SpeechToText:
         """Initialize STT.
 
         Args:
-            model_name: Whisper model size (tiny, base, small, medium, large-v3, large-v3-turbo)
+            model_name: MLX Whisper model path or HuggingFace repo
             language: Language code for transcription
         """
         self.model_name = model_name or settings.stt.model_name
         self.language = language or settings.stt.language
+        self.condition_on_previous_text = settings.stt.condition_on_previous_text
 
-        self._model = None
         self._loaded = False
 
     def _ensure_loaded(self) -> None:
-        """Lazy load the model."""
+        """Verify mlx_whisper is available (model loads on first use)."""
         if self._loaded:
             return
 
         try:
-            from faster_whisper import WhisperModel
-
-            print(f"Loading Faster Whisper model: {self.model_name}...")
-            # Use auto device detection - will use Metal on Mac
-            self._model = WhisperModel(
-                self.model_name,
-                device="auto",
-                compute_type="auto",
-            )
+            import mlx_whisper
+            self._mlx_whisper = mlx_whisper
             self._loaded = True
-            print(f"Faster Whisper model loaded: {self.model_name}")
+            print(f"MLX Whisper ready with model: {self.model_name}")
         except ImportError as e:
             raise ImportError(
-                "faster-whisper is required for STT. Install with: pip install faster-whisper"
+                "mlx-whisper is required for STT. Install with: pip install mlx-whisper"
             ) from e
 
     def transcribe(
@@ -93,31 +92,41 @@ class SpeechToText:
         # Resample if needed (Whisper expects 16kHz)
         if sample_rate != 16000:
             from scipy import signal
-
             samples = int(len(audio) * 16000 / sample_rate)
             audio = signal.resample(audio, samples)
 
         # Calculate duration
         duration = len(audio) / 16000
 
-        # Transcribe using Faster Whisper
-        segments, info = self._model.transcribe(
-            audio,
-            language=self.language,
-            beam_size=5,
-            vad_filter=True,  # Filter out non-speech
-        )
+        # MLX Whisper requires audio file path, so write to temp file
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+            temp_path = f.name
+            # Convert to 16-bit PCM for wav file
+            audio_int16 = (audio * 32767).astype(np.int16)
+            wavfile.write(temp_path, 16000, audio_int16)
 
-        # Collect all segment texts
-        text_parts = [segment.text for segment in segments]
-        text = " ".join(text_parts).strip()
+        try:
+            # Transcribe using MLX Whisper
+            # Note: beam_size is not supported in mlx-whisper (greedy decoding only)
+            result = self._mlx_whisper.transcribe(
+                temp_path,
+                path_or_hf_repo=self.model_name,
+                language=self.language,
+                condition_on_previous_text=self.condition_on_previous_text,
+            )
 
-        return TranscriptionResult(
-            text=text,
-            language=info.language,
-            confidence=info.language_probability,
-            duration_seconds=duration,
-        )
+            text = result.get("text", "").strip()
+            language = result.get("language", self.language)
+
+            return TranscriptionResult(
+                text=text,
+                language=language,
+                confidence=1.0,  # MLX Whisper doesn't provide confidence
+                duration_seconds=duration,
+            )
+        finally:
+            # Clean up temp file
+            os.unlink(temp_path)
 
     async def transcribe_async(
         self,

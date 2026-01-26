@@ -39,6 +39,10 @@ function App() {
   const [isListening, setIsListening] = useState(false);
   const [selectedVoice, setSelectedVoice] = useState('af_heart');
   const [voices, setVoices] = useState<{ id: string; name: string }[]>([]);
+  const [ttsEnabled, setTtsEnabled] = useState(() => {
+    const saved = localStorage.getItem('ttsEnabled');
+    return saved !== null ? saved === 'true' : true; // Default to enabled
+  });
   
   // Ollama/Model state
   const [ollamaStatus, setOllamaStatus] = useState<OllamaStatus>({
@@ -163,7 +167,7 @@ function App() {
     }
   }, []);
 
-  const { isConnected, sendBinary, sendTextMessage, sendStop, sendClearHistory, sendSetVoice, sendSetModel, sendSetConversation } =
+  const { isConnected, sendBinary, sendTextMessage, sendStop, sendClearHistory, sendSetVoice, sendSetModel, sendSetConversation, sendSetTtsEnabled } =
     useWebSocket({
       onMessage: handleMessage,
     });
@@ -219,12 +223,18 @@ function App() {
       .then((res) => res.json())
       .then((data) => {
         if (data.available && data.models.length > 0) {
+          // Check localStorage for saved model preference
+          const savedModel = localStorage.getItem('selectedModel');
+          const modelToUse = savedModel && data.models.includes(savedModel) 
+            ? savedModel 
+            : (data.current || data.models[0]);
+          
           setOllamaStatus({
             available: true,
             models: data.models,
-            currentModel: data.current || data.models[0],
+            currentModel: modelToUse,
           });
-          setSelectedModel(data.current || data.models[0]);
+          setSelectedModel(modelToUse);
         } else {
           setOllamaStatus({
             available: false,
@@ -256,10 +266,26 @@ function App() {
             name: VOICE_MAP[v] || v,
           }));
           setVoices(voiceList);
+          
+          // Check localStorage for saved voice preference
+          const savedVoice = localStorage.getItem('selectedVoice');
+          if (savedVoice && data.voices.includes(savedVoice)) {
+            setSelectedVoice(savedVoice);
+          }
         }
       })
       .catch((err) => console.error('Failed to fetch voices:', err));
   }, []);
+
+  // Send saved preferences to backend when connected
+  useEffect(() => {
+    if (isConnected && selectedModel && selectedVoice) {
+      // Send saved model preference to backend
+      sendSetModel(selectedModel);
+      sendSetVoice(selectedVoice);
+      sendSetTtsEnabled(ttsEnabled);
+    }
+  }, [isConnected]); // Only run when connection state changes
 
   // Cleanup on unmount
   useEffect(() => {
@@ -361,6 +387,8 @@ function App() {
     (voice: string) => {
       setSelectedVoice(voice);
       sendSetVoice(voice);
+      // Persist voice selection to localStorage
+      localStorage.setItem('selectedVoice', voice);
       const voiceName = VOICE_MAP[voice] || voice;
       setToast({ message: `Voice changed to ${voiceName}`, type: 'success' });
       setTimeout(() => setToast(null), 3000);
@@ -372,11 +400,25 @@ function App() {
     (model: string) => {
       setSelectedModel(model);
       sendSetModel(model);
+      // Persist model selection to localStorage
+      localStorage.setItem('selectedModel', model);
       setToast({ message: `Model changed to ${model}`, type: 'success' });
       setTimeout(() => setToast(null), 3000);
     },
     [sendSetModel]
   );
+
+  const handleTtsToggle = useCallback(() => {
+    const newValue = !ttsEnabled;
+    setTtsEnabled(newValue);
+    sendSetTtsEnabled(newValue);
+    localStorage.setItem('ttsEnabled', String(newValue));
+    setToast({ 
+      message: newValue ? 'Voice responses enabled' : 'Voice responses disabled', 
+      type: 'success' 
+    });
+    setTimeout(() => setToast(null), 3000);
+  }, [ttsEnabled, sendSetTtsEnabled]);
 
   const isDisabled = !ollamaStatus.available;
 
@@ -396,6 +438,13 @@ function App() {
         onNewConversation={handleNewConversation}
         onDeleteConversation={handleDeleteConversation}
         onRenameConversation={handleRenameConversation}
+        models={ollamaStatus.models}
+        selectedModel={selectedModel}
+        onModelChange={handleModelChange}
+        voices={voices}
+        selectedVoice={selectedVoice}
+        onVoiceChange={handleVoiceChange}
+        isDisabled={isDisabled}
       />
 
       {/* Main Chat Area */}
@@ -403,6 +452,8 @@ function App() {
         <ChatHeader 
           conversation={currentConversation}
           isConnected={isConnected}
+          ttsEnabled={ttsEnabled}
+          onTtsToggle={handleTtsToggle}
         />
 
         {/* Ollama error banner */}
@@ -427,7 +478,7 @@ function App() {
         {/* Toast notification */}
         {toast && (
           <div 
-            className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg transition-all duration-300 flex items-center gap-2 ${
+            className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-3 rounded-lg shadow-lg transition-all duration-300 flex items-center gap-2 ${
               toast.type === 'success' 
                 ? 'bg-emerald-600 text-white' 
                 : 'bg-red-600 text-white'
@@ -461,6 +512,7 @@ function App() {
           streamingContent={streamingContent}
           isListening={isListening}
           onToggleListening={handleToggleListening}
+          onClearChat={handleClearChat}
           isDisabled={isDisabled}
         />
 
@@ -470,14 +522,7 @@ function App() {
           isDisabled={isDisabled}
           onToggleListening={handleToggleListening}
           onSendText={handleSendText}
-          onClearChat={handleClearChat}
           onStop={handleStop}
-          voices={voices}
-          selectedVoice={selectedVoice}
-          onVoiceChange={handleVoiceChange}
-          models={ollamaStatus.models}
-          selectedModel={selectedModel}
-          onModelChange={handleModelChange}
         />
       </main>
     </div>

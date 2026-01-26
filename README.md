@@ -14,6 +14,10 @@
   <a href="#troubleshooting">Troubleshooting</a>
 </p>
 
+<p align="center">
+  <img src="assets/screenshot.png" alt="Local Voice Chatbot Screenshot" width="800">
+</p>
+
 ---
 
 ## Overview

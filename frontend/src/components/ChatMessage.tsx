@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import { Message } from '../types';
 import { formatTime } from '../utils/audioUtils';
 import { MarkdownRenderer } from './MarkdownRenderer';
@@ -29,7 +29,7 @@ function CheckIcon() {
 // User avatar icon
 function UserAvatar() {
   return (
-    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-pink-500 to-rose-600 flex items-center justify-center flex-shrink-0 shadow-lg shadow-pink-500/20">
+    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center flex-shrink-0 shadow-lg shadow-violet-500/30">
       <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
       </svg>
@@ -37,12 +37,21 @@ function UserAvatar() {
   );
 }
 
-// AI/Bot avatar icon
+// AI/Bot avatar icon (robot)
 function BotAvatar() {
   return (
     <div className="w-9 h-9 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center flex-shrink-0 shadow-lg shadow-emerald-500/20">
-      <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+      <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        {/* Robot head */}
+        <rect x="5" y="8" width="14" height="10" rx="2" strokeWidth={1.5} />
+        {/* Antenna */}
+        <line x1="12" y1="8" x2="12" y2="5" strokeWidth={1.5} strokeLinecap="round" />
+        <circle cx="12" cy="4" r="1" fill="currentColor" />
+        {/* Eyes */}
+        <circle cx="9" cy="12" r="1.5" fill="currentColor" />
+        <circle cx="15" cy="12" r="1.5" fill="currentColor" />
+        {/* Mouth */}
+        <line x1="9" y1="15" x2="15" y2="15" strokeWidth={1.5} strokeLinecap="round" />
       </svg>
     </div>
   );
@@ -137,7 +146,8 @@ function TextWithLinks({ text, className }: { text: string; className?: string }
   );
 }
 
-export function ChatMessage({ message, onContentChange }: ChatMessageProps) {
+// Memoized ChatMessage to prevent re-renders when parent state changes
+export const ChatMessage = memo(function ChatMessage({ message, onContentChange }: ChatMessageProps) {
   const isUser = message.role === 'user';
   const [copied, setCopied] = useState(false);
 
@@ -159,12 +169,12 @@ export function ChatMessage({ message, onContentChange }: ChatMessageProps) {
       {/* Message bubble */}
       <div className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} max-w-[75%]`}>
         <div
-          className={`rounded-2xl px-4 py-3 shadow-md ${
+          className={`rounded-2xl px-4 py-3 ${
             isUser
-              ? 'bg-gradient-to-br from-indigo-600 to-indigo-700 text-white rounded-tr-md'
+              ? 'bg-slate-800/90 text-slate-100 rounded-tr-md border border-violet-500/30 shadow-lg shadow-violet-500/10'
               : isToolCall(message.content)
-                ? 'bg-[#2a2d32] text-slate-100 rounded-tl-md border border-amber-500/50'
-                : 'bg-[#2a2d32] text-slate-100 rounded-tl-md border border-slate-700/50'
+                ? 'bg-[#2a2d32] text-slate-100 rounded-tl-md border border-amber-500/50 shadow-lg shadow-amber-500/10'
+                : 'bg-[#2a2d32] text-slate-100 rounded-tl-md border border-emerald-500/20 shadow-lg shadow-emerald-500/10'
           }`}
         >
           {isUser ? (
@@ -208,4 +218,4 @@ export function ChatMessage({ message, onContentChange }: ChatMessageProps) {
       </div>
     </div>
   );
-}
+});

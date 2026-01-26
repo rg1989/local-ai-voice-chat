@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import mermaid from 'mermaid';
 
 // Initialize mermaid with dark theme
@@ -56,7 +56,8 @@ function CheckIcon() {
   );
 }
 
-export function MermaidDiagram({ chart, isStreaming = false, onRender }: MermaidDiagramProps) {
+// Memoized component to prevent unnecessary re-renders when parent state changes
+export const MermaidDiagram = memo(function MermaidDiagram({ chart, isStreaming = false, onRender }: MermaidDiagramProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [svg, setSvg] = useState<string>('');
   const [isRendering, setIsRendering] = useState(false);
@@ -64,6 +65,8 @@ export function MermaidDiagram({ chart, isStreaming = false, onRender }: Mermaid
   const [copied, setCopied] = useState(false);
   const renderTimeoutRef = useRef<number | null>(null);
   const lastSuccessfulChartRef = useRef<string>('');
+  // Track if we have a pending render (chart exists but render hasn't completed yet)
+  const hasPendingRender = useRef(false);
 
   const handleCopy = async () => {
     try {
@@ -84,6 +87,9 @@ export function MermaidDiagram({ chart, isStreaming = false, onRender }: Mermaid
     // Don't try to render empty charts
     if (!chart.trim()) return;
 
+    // Mark that we have a pending render
+    hasPendingRender.current = true;
+
     // If streaming, wait longer before attempting render (debounce)
     const delay = isStreaming ? 500 : 100;
 
@@ -98,6 +104,7 @@ export function MermaidDiagram({ chart, isStreaming = false, onRender }: Mermaid
         const { svg: renderedSvg } = await mermaid.render(renderId, chart);
         setSvg(renderedSvg);
         lastSuccessfulChartRef.current = chart;
+        hasPendingRender.current = false;
         
         // Notify parent that diagram rendered (for scroll updates)
         if (onRender) {
@@ -109,6 +116,7 @@ export function MermaidDiagram({ chart, isStreaming = false, onRender }: Mermaid
         if (!isStreaming && !lastSuccessfulChartRef.current) {
           setHasError(true);
         }
+        hasPendingRender.current = false;
         // Keep showing the last successful render if we have one
       } finally {
         setIsRendering(false);
@@ -199,11 +207,33 @@ export function MermaidDiagram({ chart, isStreaming = false, onRender }: Mermaid
     );
   }
 
-  // Fallback placeholder
+  // Fallback: show loading state when chart exists but svg is not ready yet
+  // This prevents flickering by showing a loading indicator instead of plain "Diagram" text
   return (
-    <div className="my-3 p-6 bg-slate-800/50 rounded-lg flex items-center justify-center gap-2 border border-slate-700/50">
-      <ChartIcon />
-      <span className="text-sm text-slate-400">Diagram</span>
+    <div className="my-3 p-6 bg-slate-800/50 rounded-lg flex flex-col items-center justify-center gap-3 border border-slate-700/50">
+      <div className="flex items-center gap-2">
+        <div className="animate-pulse">
+          <ChartIcon />
+        </div>
+        <span className="text-sm text-slate-400">Rendering diagram...</span>
+      </div>
+      <div className="w-24 h-1 bg-slate-700 rounded-full overflow-hidden">
+        <div className="h-full bg-emerald-500 rounded-full animate-[loading_1.5s_ease-in-out_infinite]" 
+             style={{ 
+               width: '40%',
+               animation: 'loading 1.5s ease-in-out infinite'
+             }} />
+      </div>
+      <style>{`
+        @keyframes loading {
+          0% { transform: translateX(-100%); }
+          50% { transform: translateX(150%); }
+          100% { transform: translateX(-100%); }
+        }
+      `}</style>
     </div>
   );
-}
+}, (prevProps, nextProps) => {
+  // Custom comparison: only re-render if chart or isStreaming changes
+  return prevProps.chart === nextProps.chart && prevProps.isStreaming === nextProps.isStreaming;
+});

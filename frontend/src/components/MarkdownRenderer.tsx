@@ -1,3 +1,4 @@
+import { memo, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -28,8 +29,15 @@ const customTheme = {
   },
 };
 
-export function MarkdownRenderer({ content, className = '', isStreaming = false, onContentChange }: MarkdownRendererProps) {
-  const components: Components = {
+// Memoized MarkdownRenderer to prevent unnecessary re-renders
+export const MarkdownRenderer = memo(function MarkdownRenderer({ 
+  content, 
+  className = '', 
+  isStreaming = false, 
+  onContentChange 
+}: MarkdownRendererProps) {
+  // Memoize the components object to prevent ReactMarkdown from remounting children
+  const components: Components = useMemo(() => ({
     // Code blocks with syntax highlighting
     code({ className, children, ...props }) {
       const match = /language-(\w+)/.exec(className || '');
@@ -194,7 +202,7 @@ export function MarkdownRenderer({ content, className = '', isStreaming = false,
         />
       );
     },
-  };
+  }), [isStreaming, onContentChange]);
 
   return (
     <div className={`markdown-content text-sm text-slate-100 ${className}`}>
@@ -203,4 +211,4 @@ export function MarkdownRenderer({ content, className = '', isStreaming = false,
       </ReactMarkdown>
     </div>
   );
-}
+});

@@ -17,12 +17,12 @@ export function ModelSelector({
 
   return (
     <div className="flex items-center gap-2">
-      <label className="text-slate-500 text-xs font-medium uppercase tracking-wide">Model:</label>
+      <label className="text-violet-400 text-xs font-medium uppercase tracking-wide">Model</label>
       <select
         value={selectedModel}
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
-        className="bg-[#2a2d32] border border-slate-600/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500/50 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-colors"
+        className="bg-[#2a2d32] border border-violet-500/30 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/30 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-colors hover:border-violet-500/50"
       >
         {models.map((model) => (
           <option key={model} value={model}>

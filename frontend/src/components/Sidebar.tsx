@@ -132,12 +132,12 @@ export function Sidebar({
         {/* Model selector */}
         {models.length > 0 && (
           <div className="flex flex-col gap-1">
-            <label className="text-slate-500 text-xs font-medium uppercase tracking-wide px-1">Model</label>
+            <label className="text-violet-400 text-xs font-medium uppercase tracking-wide px-1">Model</label>
             <select
               value={selectedModel}
               onChange={(e) => onModelChange(e.target.value)}
               disabled={isDisabled}
-              className="w-full bg-[#2a2d32] border border-slate-600/50 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500/50 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-colors truncate"
+              className="w-full bg-[#2a2d32] border border-violet-500/30 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/30 hover:border-violet-500/50 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-colors truncate"
             >
               {models.map((model) => (
                 <option key={model} value={model}>
@@ -151,12 +151,12 @@ export function Sidebar({
         {/* Voice selector */}
         {voices.length > 0 && (
           <div className="flex flex-col gap-1">
-            <label className="text-slate-500 text-xs font-medium uppercase tracking-wide px-1">Voice</label>
+            <label className="text-violet-400 text-xs font-medium uppercase tracking-wide px-1">Voice</label>
             <select
               value={selectedVoice}
               onChange={(e) => onVoiceChange(e.target.value)}
               disabled={isDisabled}
-              className="w-full bg-[#2a2d32] border border-slate-600/50 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-500/50 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-colors"
+              className="w-full bg-[#2a2d32] border border-violet-500/30 rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/30 hover:border-violet-500/50 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-colors"
             >
               {voices.map((voice) => (
                 <option key={voice.id} value={voice.id}>
@@ -170,7 +170,7 @@ export function Sidebar({
         {/* Settings button */}
         <button
           onClick={onOpenGlobalSettings}
-          className="w-full flex items-center justify-center gap-2 px-2 py-1.5 text-slate-400 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors cursor-pointer"
+          className="w-full flex items-center justify-center gap-2 px-2 py-1.5 text-violet-400 hover:text-violet-300 hover:bg-violet-500/10 rounded-lg transition-colors cursor-pointer border border-transparent hover:border-violet-500/30"
         >
           <SettingsIcon />
           <span className="text-xs">Settings</span>

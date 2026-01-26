@@ -3,6 +3,7 @@
 import asyncio
 import base64
 import json
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -16,7 +17,7 @@ from ..config import settings
 from ..pipeline.llm import LLMClient
 from ..pipeline.tools import tool_registry
 from ..pipeline.tool_parser import tool_parser
-from ..storage.conversations import ConversationStorage
+from ..storage.conversations import ConversationStorage, InteractionLog
 from ..pipeline.sentencizer import StreamingSentencizer
 from ..pipeline.stt import SpeechToText
 from ..pipeline.tts import TextToSpeech
@@ -167,6 +168,12 @@ class VoiceChatSession:
         if self.conversation_id and content.strip():
             conversation_storage.add_message(self.conversation_id, role, content)
 
+    def _save_interaction_log(self, log: InteractionLog) -> None:
+        """Save an interaction log to the current conversation."""
+        if self.conversation_id:
+            conversation_storage.add_interaction_log(self.conversation_id, log)
+            print(f"[LOG] Saved interaction log: {log.id[:8]}... (input: '{log.llm_user_message[:50]}...')")
+
     def _format_tool_call_message(self, content: str) -> str:
         """Format a tool call message for clean display.
         
@@ -255,6 +262,10 @@ class VoiceChatSession:
 
     async def process_speech_end(self) -> None:
         """Process end of speech segment."""
+        # Create interaction log
+        interaction_start = time.time()
+        log = InteractionLog.create(input_type="voice")
+        
         try:
             # Get accumulated speech from VAD
             speech_audio = self.vad.get_speech_audio()
@@ -267,22 +278,31 @@ class VoiceChatSession:
                 await self.send_status("listening")
                 return
 
+            # Log audio details
+            log.audio_samples = len(speech_audio)
+            log.audio_duration_ms = int((len(speech_audio) / settings.audio.sample_rate) * 1000)
+            
             print(f"[DEBUG] Starting transcription of {len(speech_audio)} samples...")
             
             # Transcribe
             await self.send_status("transcribing")
+            transcription_start = time.time()
             result = await self.stt.transcribe_async(speech_audio, settings.audio.sample_rate)
+            log.transcription_duration_ms = int((time.time() - transcription_start) * 1000)
+            log.transcription_text = result.text
             
             print(f"[DEBUG] Transcription complete: '{result.text}'")
 
             # Check for cancellation after transcription
             if self._cancel_requested:
                 self._cancel_requested = False
+                log.add_error("Cancelled after transcription")
                 print("[DEBUG] Cancelled after transcription")
                 await self.send_status("listening")
                 return
 
             if not result.text.strip():
+                log.add_error("Empty transcription")
                 print("[DEBUG] Empty transcription, returning to listening")
                 await self.send_status("listening")
                 return
@@ -296,17 +316,32 @@ class VoiceChatSession:
             # Check for cancellation before LLM
             if self._cancel_requested:
                 self._cancel_requested = False
+                log.add_error("Cancelled before LLM")
                 print("[DEBUG] Cancelled before LLM")
                 await self.send_status("listening")
                 return
 
+            # Log LLM details BEFORE the call
+            log.llm_model = self.llm.model_name
+            log.llm_system_prompt = self.llm.system_prompt
+            log.llm_history = [{"role": m.role, "content": m.content} for m in self.llm.history.messages]
+            log.llm_user_message = transcribed_text
+            log.tts_enabled = self._tts_enabled
+            log.tts_voice = self.tts.voice
+            
             # Get LLM response
             print(f"[DEBUG] Starting LLM call with model: {self.llm.model_name}")
+            print(f"[DEBUG] User message being sent to LLM: '{transcribed_text}'")
+            print(f"[DEBUG] History messages count: {len(self.llm.history.messages)}")
+            if self.llm.history.messages:
+                for i, msg in enumerate(self.llm.history.messages[-4:]):  # Show last 4 messages
+                    print(f"[DEBUG]   History[{i}] {msg.role}: {msg.content[:100]}...")
             await self.send_status("thinking")
 
             self.sentencizer.reset()
             full_response = []
             cancelled = False
+            llm_start = time.time()
 
             # Stream response
             async for token in await self.llm.chat_async(transcribed_text, stream=True):
@@ -327,11 +362,19 @@ class VoiceChatSession:
                         cancelled = True
                         break
                     await self.synthesize_and_send(sentence)
+            
+            log.llm_response_duration_ms = int((time.time() - llm_start) * 1000)
+            log.llm_response_text = "".join(full_response)
+            log.llm_prompt_tokens = self.llm._last_prompt_tokens
 
             if cancelled:
+                log.add_error("Cancelled during LLM streaming")
                 print("[DEBUG] Cancelled during LLM streaming")
                 await self.send_status("stopped")
                 await self.send_status("listening")
+                # Save the partial log
+                log.total_duration_ms = int((time.time() - interaction_start) * 1000)
+                self._save_interaction_log(log)
                 return
 
             # Flush remaining
@@ -341,7 +384,7 @@ class VoiceChatSession:
 
             # Check for and execute tool calls
             full_response_text = "".join(full_response)
-            tool_results = await self._execute_tools_if_present(full_response_text)
+            tool_results = await self._execute_tools_if_present(full_response_text, log)
             
             if tool_results and not self._cancel_requested:
                 # End the first message (which contains the tool call)
@@ -365,13 +408,23 @@ class VoiceChatSession:
             
             print(f"[DEBUG] Response complete: {len(full_response)} tokens")
             
+            # Finalize and save log
+            log.total_duration_ms = int((time.time() - interaction_start) * 1000)
+            self._save_interaction_log(log)
+            
             # Send "listening" with memory usage to resume audio streaming
             await self.send_status("listening", include_memory=True)
             
         except asyncio.CancelledError:
+            log.add_error("Task was cancelled")
+            log.total_duration_ms = int((time.time() - interaction_start) * 1000)
+            self._save_interaction_log(log)
             print("[DEBUG] Task was cancelled")
             return
         except Exception as e:
+            log.add_error(f"Processing error: {str(e)}")
+            log.total_duration_ms = int((time.time() - interaction_start) * 1000)
+            self._save_interaction_log(log)
             print(f"[ERROR] Processing error: {e}")
             import traceback
             traceback.print_exc()
@@ -413,17 +466,30 @@ class VoiceChatSession:
 
     async def process_text_message(self, text: str) -> None:
         """Process a text message (for text-only mode)."""
+        # Create interaction log
+        interaction_start = time.time()
+        log = InteractionLog.create(input_type="text")
+        log.llm_user_message = text
+        
         try:
             await self.send_transcription(text)
             
             # Save user message to conversation
             self._save_message("user", text)
             
+            # Log LLM details BEFORE the call
+            log.llm_model = self.llm.model_name
+            log.llm_system_prompt = self.llm.system_prompt
+            log.llm_history = [{"role": m.role, "content": m.content} for m in self.llm.history.messages]
+            log.tts_enabled = self._tts_enabled
+            log.tts_voice = self.tts.voice
+            
             await self.send_status("thinking")
 
             self.sentencizer.reset()
             cancelled = False
             full_response = []
+            llm_start = time.time()
 
             # Stream response
             async for token in await self.llm.chat_async(text, stream=True):
@@ -444,7 +510,14 @@ class VoiceChatSession:
                         break
                     await self.synthesize_and_send(sentence)
 
+            log.llm_response_duration_ms = int((time.time() - llm_start) * 1000)
+            log.llm_response_text = "".join(full_response)
+            log.llm_prompt_tokens = self.llm._last_prompt_tokens
+
             if cancelled:
+                log.add_error("Cancelled during LLM streaming")
+                log.total_duration_ms = int((time.time() - interaction_start) * 1000)
+                self._save_interaction_log(log)
                 return
 
             remaining = self.sentencizer.flush()
@@ -453,7 +526,7 @@ class VoiceChatSession:
 
             # Check for and execute tool calls
             full_response_text = "".join(full_response)
-            tool_results = await self._execute_tools_if_present(full_response_text)
+            tool_results = await self._execute_tools_if_present(full_response_text, log)
             
             if tool_results and not self._cancel_requested:
                 # End the first message (which contains the tool call)
@@ -475,13 +548,22 @@ class VoiceChatSession:
                 # Save assistant message to conversation
                 self._save_message("assistant", full_response_text)
             
+            # Finalize and save log
+            log.total_duration_ms = int((time.time() - interaction_start) * 1000)
+            self._save_interaction_log(log)
+            
             # Send "listening" with memory usage to resume audio streaming
             await self.send_status("listening", include_memory=True)
             
         except asyncio.CancelledError:
-            # Task was cancelled
+            log.add_error("Task was cancelled")
+            log.total_duration_ms = int((time.time() - interaction_start) * 1000)
+            self._save_interaction_log(log)
             return
         except Exception as e:
+            log.add_error(f"LLM error: {str(e)}")
+            log.total_duration_ms = int((time.time() - interaction_start) * 1000)
+            self._save_interaction_log(log)
             print(f"LLM error: {e}")
             await manager.send_json(
                 self.websocket,
@@ -489,8 +571,12 @@ class VoiceChatSession:
             )
             await self.send_status("listening", include_memory=True)
     
-    async def _execute_tools_if_present(self, response_text: str) -> str | None:
+    async def _execute_tools_if_present(self, response_text: str, log: Optional[InteractionLog] = None) -> str | None:
         """Check for and execute tool calls in the response.
+        
+        Args:
+            response_text: The LLM response text to check for tool calls
+            log: Optional interaction log to record tool calls
         
         Returns:
             Tool results string if tools were executed, None otherwise
@@ -507,14 +593,20 @@ class VoiceChatSession:
             print(f"[TOOL] Executing: {call.tool} with args: {call.args}")
             await self.send_status("executing_tool", {"tool": call.tool})
             
+            tool_start = time.time()
             result = await tool_registry.execute(call.tool, call.args)
+            tool_duration_ms = int((time.time() - tool_start) * 1000)
             
             if result.success:
                 results.append(f"[Tool: {call.tool}]\n{result.output}")
                 print(f"[TOOL] Success: {result.output[:200]}...")
+                if log:
+                    log.add_tool_call(call.tool, call.args, result.output, tool_duration_ms, success=True)
             else:
                 results.append(f"[Tool: {call.tool}] Error: {result.error}")
                 print(f"[TOOL] Error: {result.error}")
+                if log:
+                    log.add_tool_call(call.tool, call.args, result.error or "", tool_duration_ms, success=False)
         
         return "\n\n".join(results)
     
@@ -859,6 +951,30 @@ async def clear_messages(conversation_id: str):
     if not success:
         raise HTTPException(status_code=404, detail="Conversation not found")
     return {"success": True}
+
+
+@app.get("/api/conversations/{conversation_id}/logs")
+async def get_conversation_logs(conversation_id: str, limit: int = Query(default=50, ge=1, le=200)):
+    """Get interaction logs for a conversation (for debugging).
+    
+    Returns detailed logs of each interaction including:
+    - Input (voice/text)
+    - Transcription details
+    - Full LLM context (system prompt, history, user message)
+    - LLM response
+    - Tool calls
+    - Timing information
+    - Errors
+    """
+    logs = conversation_storage.get_interaction_logs(conversation_id, limit=limit)
+    if not logs and conversation_storage.load(conversation_id) is None:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    
+    return {
+        "conversation_id": conversation_id,
+        "log_count": len(logs),
+        "logs": [log.to_dict() for log in logs]
+    }
 
 
 # Serve the web UI

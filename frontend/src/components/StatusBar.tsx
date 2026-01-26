@@ -37,8 +37,8 @@ export function StatusBar({ state, onStop }: StatusBarProps) {
 
   const { text, indicatorClass } = statusConfig[state];
 
-  // Only show status bar when not idle
-  if (state === AppState.IDLE) {
+  // Don't show status bar for IDLE (nothing happening) or LISTENING (full overlay is shown instead)
+  if (state === AppState.IDLE || state === AppState.LISTENING) {
     return null;
   }
 

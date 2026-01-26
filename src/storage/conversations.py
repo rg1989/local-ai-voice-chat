@@ -5,7 +5,104 @@ import uuid
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Any
+
+
+@dataclass
+class InteractionLog:
+    """Detailed log of a single interaction (user input -> assistant response)."""
+    
+    id: str
+    timestamp: str  # ISO format - when interaction started
+    
+    # Input details
+    input_type: str  # "voice" or "text"
+    audio_duration_ms: Optional[int] = None  # Duration of audio if voice input
+    audio_samples: Optional[int] = None  # Number of audio samples
+    
+    # Transcription details (for voice input)
+    transcription_text: Optional[str] = None  # What STT produced
+    transcription_duration_ms: Optional[int] = None  # How long transcription took
+    
+    # What was sent to LLM
+    llm_model: str = ""
+    llm_system_prompt: str = ""  # Full system prompt including tools/rules
+    llm_history: list[dict] = field(default_factory=list)  # Messages in history
+    llm_user_message: str = ""  # The user message sent
+    
+    # LLM response details
+    llm_response_text: str = ""  # Full response
+    llm_response_duration_ms: Optional[int] = None  # How long LLM took
+    llm_prompt_tokens: Optional[int] = None  # Tokens used in prompt
+    llm_response_tokens: Optional[int] = None  # Tokens in response
+    
+    # Tool execution (if any)
+    tool_calls: list[dict] = field(default_factory=list)  # [{tool, args, result, duration_ms}]
+    
+    # TTS details
+    tts_enabled: bool = True
+    tts_voice: str = ""
+    tts_duration_ms: Optional[int] = None
+    
+    # Overall timing
+    total_duration_ms: Optional[int] = None
+    
+    # Errors (if any)
+    errors: list[str] = field(default_factory=list)
+    
+    @classmethod
+    def create(cls, input_type: str = "voice") -> "InteractionLog":
+        """Create a new interaction log."""
+        return cls(
+            id=str(uuid.uuid4()),
+            timestamp=datetime.now().isoformat(),
+            input_type=input_type,
+        )
+    
+    def to_dict(self) -> dict:
+        """Convert to dictionary."""
+        return asdict(self)
+    
+    @classmethod
+    def from_dict(cls, data: dict) -> "InteractionLog":
+        """Create from dictionary."""
+        return cls(
+            id=data.get("id", str(uuid.uuid4())),
+            timestamp=data.get("timestamp", datetime.now().isoformat()),
+            input_type=data.get("input_type", "voice"),
+            audio_duration_ms=data.get("audio_duration_ms"),
+            audio_samples=data.get("audio_samples"),
+            transcription_text=data.get("transcription_text"),
+            transcription_duration_ms=data.get("transcription_duration_ms"),
+            llm_model=data.get("llm_model", ""),
+            llm_system_prompt=data.get("llm_system_prompt", ""),
+            llm_history=data.get("llm_history", []),
+            llm_user_message=data.get("llm_user_message", ""),
+            llm_response_text=data.get("llm_response_text", ""),
+            llm_response_duration_ms=data.get("llm_response_duration_ms"),
+            llm_prompt_tokens=data.get("llm_prompt_tokens"),
+            llm_response_tokens=data.get("llm_response_tokens"),
+            tool_calls=data.get("tool_calls", []),
+            tts_enabled=data.get("tts_enabled", True),
+            tts_voice=data.get("tts_voice", ""),
+            tts_duration_ms=data.get("tts_duration_ms"),
+            total_duration_ms=data.get("total_duration_ms"),
+            errors=data.get("errors", []),
+        )
+    
+    def add_error(self, error: str) -> None:
+        """Add an error message."""
+        self.errors.append(f"[{datetime.now().isoformat()}] {error}")
+    
+    def add_tool_call(self, tool: str, args: dict, result: str, duration_ms: int, success: bool = True) -> None:
+        """Add a tool call record."""
+        self.tool_calls.append({
+            "tool": tool,
+            "args": args,
+            "result": result[:500] if len(result) > 500 else result,  # Truncate long results
+            "duration_ms": duration_ms,
+            "success": success,
+        })
 
 
 @dataclass
@@ -52,6 +149,7 @@ class Conversation:
     updated_at: str  # ISO format
     messages: list[StoredMessage] = field(default_factory=list)
     custom_rules: str = ""  # Per-chat custom instructions/rules
+    interaction_logs: list[InteractionLog] = field(default_factory=list)  # Detailed debug logs
 
     @classmethod
     def create(cls, title: str = "New Conversation") -> "Conversation":
@@ -64,6 +162,7 @@ class Conversation:
             updated_at=now,
             messages=[],
             custom_rules="",
+            interaction_logs=[],
         )
 
     def add_message(self, role: str, content: str) -> StoredMessage:
@@ -90,6 +189,7 @@ class Conversation:
             "updated_at": self.updated_at,
             "messages": [m.to_dict() for m in self.messages],
             "custom_rules": self.custom_rules,
+            "interaction_logs": [log.to_dict() for log in self.interaction_logs],
         }
 
     @classmethod
@@ -102,7 +202,13 @@ class Conversation:
             updated_at=data.get("updated_at", datetime.now().isoformat()),
             messages=[StoredMessage.from_dict(m) for m in data.get("messages", [])],
             custom_rules=data.get("custom_rules", ""),
+            interaction_logs=[InteractionLog.from_dict(log) for log in data.get("interaction_logs", [])],
         )
+    
+    def add_interaction_log(self, log: "InteractionLog") -> None:
+        """Add an interaction log to the conversation."""
+        self.interaction_logs.append(log)
+        self.updated_at = datetime.now().isoformat()
 
 
 class ConversationStorage:
@@ -266,3 +372,38 @@ class ConversationStorage:
         if conversation is None:
             return None
         return conversation.custom_rules
+
+    def add_interaction_log(self, conversation_id: str, log: InteractionLog) -> bool:
+        """Add an interaction log to a conversation.
+        
+        Args:
+            conversation_id: The conversation ID
+            log: The interaction log to add
+            
+        Returns:
+            True if successful, False if conversation not found
+        """
+        conversation = self.load(conversation_id)
+        if conversation is None:
+            return False
+        
+        conversation.add_interaction_log(log)
+        self.save(conversation)
+        return True
+
+    def get_interaction_logs(self, conversation_id: str, limit: int = 50) -> list[InteractionLog]:
+        """Get interaction logs for a conversation.
+        
+        Args:
+            conversation_id: The conversation ID
+            limit: Maximum number of logs to return (newest first)
+            
+        Returns:
+            List of interaction logs
+        """
+        conversation = self.load(conversation_id)
+        if conversation is None:
+            return []
+        
+        # Return newest first, limited
+        return list(reversed(conversation.interaction_logs[-limit:]))

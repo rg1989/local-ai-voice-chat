@@ -9,11 +9,11 @@ interface ChatHeaderProps {
   memoryUsage: MemoryUsage | null;
 }
 
-// Bot/AI icon
-function BotIcon() {
+// Chat bubble icon (matches sidebar)
+function ChatBubbleIcon() {
   return (
     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
     </svg>
   );
 }
@@ -42,9 +42,9 @@ export function ChatHeader({ conversation, isConnected, ttsEnabled, onTtsToggle,
     <header className="bg-[#1e2227] border-b border-slate-700/50 px-6 py-4">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
-          {/* AI Avatar */}
+          {/* Chat Icon */}
           <div className="w-11 h-11 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-lg shadow-emerald-500/20">
-            <BotIcon />
+            <ChatBubbleIcon />
           </div>
           
           <div>
@@ -70,7 +70,7 @@ export function ChatHeader({ conversation, isConnected, ttsEnabled, onTtsToggle,
             className={`p-2 rounded-lg transition-all cursor-pointer ${
               ttsEnabled
                 ? 'bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30'
-                : 'bg-slate-700/50 text-slate-500 hover:bg-slate-700 hover:text-slate-400'
+                : 'bg-violet-600/20 text-violet-400 hover:bg-violet-600/30'
             }`}
             title={ttsEnabled ? 'Voice responses enabled' : 'Voice responses disabled'}
           >

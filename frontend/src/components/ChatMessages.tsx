@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { Message, AppState } from '../types';
 import { ChatMessage } from './ChatMessage';
 import { MarkdownRenderer } from './MarkdownRenderer';
@@ -46,13 +46,29 @@ function ListeningIcon() {
   );
 }
 
+// Robot icon SVG (shared by bot avatars)
+function RobotIcon() {
+  return (
+    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      {/* Robot head */}
+      <rect x="5" y="8" width="14" height="10" rx="2" strokeWidth={1.5} />
+      {/* Antenna */}
+      <line x1="12" y1="8" x2="12" y2="5" strokeWidth={1.5} strokeLinecap="round" />
+      <circle cx="12" cy="4" r="1" fill="currentColor" />
+      {/* Eyes */}
+      <circle cx="9" cy="12" r="1.5" fill="currentColor" />
+      <circle cx="15" cy="12" r="1.5" fill="currentColor" />
+      {/* Mouth */}
+      <line x1="9" y1="15" x2="15" y2="15" strokeWidth={1.5} strokeLinecap="round" />
+    </svg>
+  );
+}
+
 // Bot avatar for streaming
 function StreamingBotAvatar() {
   return (
     <div className="w-9 h-9 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shrink-0 shadow-lg shadow-emerald-500/20">
-      <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-      </svg>
+      <RobotIcon />
     </div>
   );
 }
@@ -61,8 +77,17 @@ function StreamingBotAvatar() {
 function ThinkingBotAvatar() {
   return (
     <div className="w-9 h-9 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shrink-0 shadow-lg shadow-emerald-500/20 animate-pulse">
+      <RobotIcon />
+    </div>
+  );
+}
+
+// User avatar with transcribing animation
+function TranscribingUserAvatar() {
+  return (
+    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center shrink-0 shadow-lg shadow-violet-500/30 animate-pulse">
       <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
       </svg>
     </div>
   );
@@ -171,7 +196,7 @@ function CheckIcon() {
   );
 }
 
-export function ChatMessages({ 
+export const ChatMessages = memo(function ChatMessages({ 
   messages, 
   streamingContent,
   isListening,
@@ -183,29 +208,33 @@ export function ChatMessages({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [copied, setCopied] = useState(false);
 
-  const scrollToBottom = () => {
+  // Memoize scrollToBottom to prevent child re-renders
+  const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
+  }, []);
 
   // Scroll when messages change, streaming content changes, or state changes
   useEffect(() => {
     scrollToBottom();
-  }, [messages, streamingContent, state]);
+  }, [messages, streamingContent, state, scrollToBottom]);
   
-  // Check if we should show the thinking indicator
-  const isThinking = (state === AppState.TRANSCRIBING || state === AppState.THINKING) && !streamingContent;
+  // Check if we should show the transcribing indicator (user avatar with "Transcribing...")
+  const isTranscribing = state === AppState.TRANSCRIBING;
+  
+  // Check if we should show the thinking indicator (LLM avatar with dots)
+  const isThinking = state === AppState.THINKING && !streamingContent;
 
-  // Format messages for export
-  const formatMessagesForExport = () => {
+  // Format messages for export - memoized
+  const formatMessagesForExport = useCallback(() => {
     return messages.map(msg => {
       const role = msg.role === 'user' ? 'User' : 'Assistant';
       const time = formatTime(msg.timestamp);
       return `${role} (${time}):\n${msg.content}\n`;
     }).join('\n---\n\n');
-  };
+  }, [messages]);
 
-  // Copy entire chat to clipboard
-  const handleCopyChat = async () => {
+  // Copy entire chat to clipboard - memoized
+  const handleCopyChat = useCallback(async () => {
     try {
       const text = formatMessagesForExport();
       await navigator.clipboard.writeText(text);
@@ -214,10 +243,10 @@ export function ChatMessages({
     } catch (err) {
       console.error('Failed to copy chat:', err);
     }
-  };
+  }, [formatMessagesForExport]);
 
-  // Download chat as markdown file
-  const handleDownloadChat = () => {
+  // Download chat as markdown file - memoized
+  const handleDownloadChat = useCallback(() => {
     const text = formatMessagesForExport();
     const blob = new Blob([text], { type: 'text/markdown' });
     const url = URL.createObjectURL(blob);
@@ -228,31 +257,80 @@ export function ChatMessages({
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
-  };
+  }, [formatMessagesForExport]);
 
   return (
     <div className="flex-1 flex flex-col bg-[#15181c] relative overflow-hidden">
+      {/* Recording Overlay - shown when listening */}
+      {isListening && (
+        <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black/70 backdrop-blur-sm">
+          {/* Pulsing microphone icon */}
+          <div className="relative mb-8">
+            <div className="absolute inset-0 bg-emerald-500/30 rounded-full animate-ping" />
+            <div className="relative w-32 h-32 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-2xl shadow-emerald-500/40">
+              <svg className="w-16 h-16 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+              </svg>
+            </div>
+          </div>
+
+          {/* Recording text with animated waves */}
+          <div className="flex items-center gap-3 mb-8">
+            <div className="flex items-center gap-1">
+              <div className="w-1 h-4 bg-emerald-400 rounded-full animate-wave" style={{ animationDelay: '0ms' }} />
+              <div className="w-1 h-6 bg-emerald-400 rounded-full animate-wave" style={{ animationDelay: '100ms' }} />
+              <div className="w-1 h-8 bg-emerald-400 rounded-full animate-wave" style={{ animationDelay: '200ms' }} />
+              <div className="w-1 h-6 bg-emerald-400 rounded-full animate-wave" style={{ animationDelay: '300ms' }} />
+              <div className="w-1 h-4 bg-emerald-400 rounded-full animate-wave" style={{ animationDelay: '400ms' }} />
+            </div>
+            <h2 className="text-3xl font-bold text-white">Recording</h2>
+            <div className="flex items-center gap-1">
+              <div className="w-1 h-4 bg-emerald-400 rounded-full animate-wave" style={{ animationDelay: '400ms' }} />
+              <div className="w-1 h-6 bg-emerald-400 rounded-full animate-wave" style={{ animationDelay: '300ms' }} />
+              <div className="w-1 h-8 bg-emerald-400 rounded-full animate-wave" style={{ animationDelay: '200ms' }} />
+              <div className="w-1 h-6 bg-emerald-400 rounded-full animate-wave" style={{ animationDelay: '100ms' }} />
+              <div className="w-1 h-4 bg-emerald-400 rounded-full animate-wave" style={{ animationDelay: '0ms' }} />
+            </div>
+          </div>
+
+          <p className="text-slate-300 text-lg mb-8">Speak now... the assistant will respond when you pause.</p>
+
+          {/* Stop recording button */}
+          <button
+            onClick={onToggleListening}
+            className="px-8 py-4 bg-red-600 hover:bg-red-700 text-white text-lg font-semibold rounded-xl 
+                       transition-all duration-200 flex items-center gap-3 shadow-xl shadow-red-500/30
+                       hover:scale-105 cursor-pointer"
+          >
+            <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+              <rect x="6" y="6" width="12" height="12" rx="2" />
+            </svg>
+            Stop Recording
+          </button>
+        </div>
+      )}
+
       {/* Floating Messages Counter - fixed position relative to container */}
-      {messages.length > 0 && (
+      {messages.length > 0 && !isListening && (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10
-                       opacity-50 hover:opacity-100 px-3 py-1.5 text-xs text-slate-400 hover:text-amber-400
+                       opacity-50 hover:opacity-100 px-3 py-1.5 text-xs text-slate-400 hover:text-violet-400
                        bg-slate-800/80 hover:bg-slate-800 backdrop-blur-sm
-                       border border-slate-700/50 hover:border-amber-500/50
+                       border border-slate-700/50 hover:border-violet-500/50
                        rounded-full flex items-center gap-1.5 transition-all duration-200 cursor-default select-none">
           <EnvelopeIcon />
           {messages.length} {messages.length === 1 ? 'message' : 'messages'}
         </div>
       )}
 
-      {/* Floating action buttons - fixed position relative to container */}
-      {messages.length > 0 && (
+      {/* Floating action buttons - fixed position relative to container (hidden during recording) */}
+      {messages.length > 0 && !isListening && (
         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2">
           {/* Copy Chat button */}
           <button
             onClick={handleCopyChat}
-            className="opacity-40 hover:opacity-100 px-3 py-1.5 text-xs text-slate-400 hover:text-emerald-400 
+            className="opacity-40 hover:opacity-100 px-3 py-1.5 text-xs text-slate-400 hover:text-violet-400 
                        bg-slate-800/80 hover:bg-slate-800 backdrop-blur-sm
-                       border border-slate-700/50 hover:border-emerald-500/50 
+                       border border-slate-700/50 hover:border-violet-500/50 
                        rounded-full transition-all duration-200 flex items-center gap-1.5 cursor-pointer"
           >
             {copied ? <CheckIcon /> : <CopyIcon />}
@@ -262,9 +340,9 @@ export function ChatMessages({
           {/* Download Chat button */}
           <button
             onClick={handleDownloadChat}
-            className="opacity-40 hover:opacity-100 px-3 py-1.5 text-xs text-slate-400 hover:text-blue-400 
+            className="opacity-40 hover:opacity-100 px-3 py-1.5 text-xs text-slate-400 hover:text-violet-400 
                        bg-slate-800/80 hover:bg-slate-800 backdrop-blur-sm
-                       border border-slate-700/50 hover:border-blue-500/50 
+                       border border-slate-700/50 hover:border-violet-500/50 
                        rounded-full transition-all duration-200 flex items-center gap-1.5 cursor-pointer"
           >
             <DownloadIcon />
@@ -325,12 +403,36 @@ export function ChatMessages({
             </div>
           ))}
 
+          {/* Transcribing indicator - show user avatar when speech is being converted to text */}
+          {isTranscribing && (
+            <div className="flex gap-3 mb-5 animate-fade-in flex-row-reverse">
+              <TranscribingUserAvatar />
+              <div className="flex flex-col items-end max-w-[75%]">
+                <div className="rounded-2xl rounded-tr-md px-4 py-3 shadow-md bg-gradient-to-br from-indigo-600 to-indigo-700 text-white border border-indigo-500/50">
+                  <div className="flex items-center gap-2 text-sm">
+                    <svg className="w-4 h-4 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                    </svg>
+                    <span>Transcribing...</span>
+                    <div className="flex items-center gap-1">
+                      <div className="w-1.5 h-1.5 bg-white/70 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                      <div className="w-1.5 h-1.5 bg-white/70 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                      <div className="w-1.5 h-1.5 bg-white/70 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {streamingContent && (
             <div className="flex gap-3 mb-5 animate-fade-in">
               <StreamingBotAvatar />
               <div className="flex flex-col items-start max-w-[75%]">
-                <div className={`rounded-2xl rounded-tl-md px-4 py-3 shadow-md bg-[#2a2d32] text-slate-100 ${
-                  isStreamingToolCall(streamingContent) ? 'border border-amber-500/50' : 'border border-slate-700/50'
+                <div className={`rounded-2xl rounded-tl-md px-4 py-3 bg-[#2a2d32] text-slate-100 ${
+                  isStreamingToolCall(streamingContent) 
+                    ? 'border border-amber-500/50 shadow-lg shadow-amber-500/10' 
+                    : 'border border-emerald-500/20 shadow-lg shadow-emerald-500/10'
                 }`}>
                   {isStreamingToolCall(streamingContent) ? (
                     <div>
@@ -356,13 +458,16 @@ export function ChatMessages({
             </div>
           )}
 
-          {/* Thinking/Loading indicator - show when transcribing or thinking, before streaming starts */}
+          {/* Thinking indicator - show LLM avatar when processing, before streaming starts */}
           {isThinking && (
             <div className="flex gap-3 mb-5 animate-fade-in">
               <ThinkingBotAvatar />
               <div className="flex flex-col items-start max-w-[75%]">
                 <div className="rounded-2xl rounded-tl-md px-4 py-3 shadow-md bg-[#2a2d32] text-slate-100 border border-slate-700/50">
-                  <TypingDots />
+                  <div className="flex items-center gap-3">
+                    <span className="text-sm text-slate-400">Thinking...</span>
+                    <TypingDots />
+                  </div>
                 </div>
               </div>
             </div>
@@ -373,4 +478,4 @@ export function ChatMessages({
       </div>
     </div>
   );
-}
+});

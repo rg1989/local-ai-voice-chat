@@ -67,13 +67,13 @@ export function InputBar({ onSend, disabled }: InputBarProps) {
         placeholder="Type a message..."
         disabled={disabled}
         rows={1}
-        className="flex-1 bg-[#2a2d32] border border-slate-600/50 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500/50 focus:ring-1 focus:ring-emerald-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-all resize-none overflow-y-auto"
+        className="flex-1 bg-[#2a2d32] border border-slate-600/50 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-all resize-none overflow-y-auto"
         style={{ height: '36px', maxHeight: '100px' }}
       />
       <button
         onClick={handleSend}
         disabled={disabled || !text.trim()}
-        className="h-9 px-4 bg-slate-700 hover:bg-slate-600 disabled:bg-slate-800 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-all cursor-pointer flex items-center gap-1.5 shrink-0 border border-slate-600/50 disabled:border-slate-700/50 disabled:text-slate-500"
+        className="h-9 px-4 bg-violet-600 hover:bg-violet-700 disabled:bg-slate-800 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-all cursor-pointer flex items-center gap-1.5 shrink-0 border border-violet-500/50 disabled:border-slate-700/50 disabled:text-slate-500 shadow-lg shadow-violet-500/20 disabled:shadow-none"
       >
         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />

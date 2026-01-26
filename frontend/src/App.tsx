@@ -1,7 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { ChatHeader } from './components/ChatHeader';
-import { StatusBar } from './components/StatusBar';
 import { ChatMessages } from './components/ChatMessages';
 import { ControlBar } from './components/ControlBar';
 import { ChatSettingsModal } from './components/ChatSettingsModal';
@@ -211,6 +210,16 @@ function App() {
   const { startListening, stopListening, playAudio, clearAudioQueue, cleanup } = useAudioStream({
     onAudioChunk: handleAudioChunk,
   });
+
+  // Stop listening when transcription starts (recording phase is over)
+  // This closes the recording overlay automatically
+  useEffect(() => {
+    if (state === AppState.TRANSCRIBING && isListeningRef.current) {
+      isListeningRef.current = false;
+      setIsListening(false);
+      stopListening();
+    }
+  }, [state, stopListening]);
 
   // Update conversation messages when they change
   useEffect(() => {
@@ -539,9 +548,20 @@ function App() {
   );
 
   const handleStop = useCallback(() => {
+    // Stop backend processing
     sendStop();
     clearAudioQueue();
-  }, [sendStop, clearAudioQueue]);
+    
+    // Also stop recording if active
+    if (isListening) {
+      isListeningRef.current = false;
+      setIsListening(false);
+      stopListening();
+    }
+    
+    // Reset to idle state
+    setState(AppState.IDLE);
+  }, [sendStop, clearAudioQueue, isListening, stopListening]);
 
   const handleClearChat = useCallback(() => {
     sendClearHistory();
@@ -693,8 +713,6 @@ function App() {
             </button>
           </div>
         )}
-
-        <StatusBar state={state} onStop={handleStop} />
 
         <ChatMessages 
           messages={messages} 

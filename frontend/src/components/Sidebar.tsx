@@ -8,6 +8,7 @@ interface SidebarProps {
   onSelectConversation: (id: string) => void;
   onNewConversation: () => void;
   onDeleteConversation: (id: string) => void;
+  onRenameConversation: (id: string, newTitle: string) => void;
 }
 
 // Plus icon for new conversation
@@ -35,6 +36,7 @@ export function Sidebar({
   onSelectConversation,
   onNewConversation,
   onDeleteConversation,
+  onRenameConversation,
 }: SidebarProps) {
   return (
     <aside className="w-72 bg-[#1e2227] border-r border-slate-700/50 flex flex-col h-screen">
@@ -70,6 +72,7 @@ export function Sidebar({
                 isActive={conversation.id === activeConversationId}
                 onSelect={() => onSelectConversation(conversation.id)}
                 onDelete={() => onDeleteConversation(conversation.id)}
+                onRename={(newTitle) => onRenameConversation(conversation.id, newTitle)}
               />
             ))}
           </div>

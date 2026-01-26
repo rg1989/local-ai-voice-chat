@@ -11,6 +11,8 @@ interface UseConversationsReturn {
   selectConversation: (id: string) => Promise<Message[]>;
   deleteConversation: (id: string) => Promise<boolean>;
   updateConversationMessages: (id: string, messages: Message[]) => void;
+  renameConversation: (id: string, newTitle: string) => Promise<boolean>;
+  refetchConversation: (id: string) => Promise<void>;
 }
 
 export function useConversations(): UseConversationsReturn {
@@ -142,6 +144,77 @@ export function useConversations(): UseConversationsReturn {
     );
   }, []);
 
+  const renameConversation = useCallback(async (id: string, newTitle: string): Promise<boolean> => {
+    try {
+      setError(null);
+      const response = await fetch(`/api/conversations/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: newTitle }),
+      });
+      
+      if (response.ok) {
+        setConversations((prev) => 
+          prev.map((c) => c.id === id ? { ...c, title: newTitle } : c)
+        );
+        return true;
+      }
+      return false;
+    } catch (err) {
+      console.error('Failed to rename conversation:', err);
+      setError('Failed to rename conversation');
+      return false;
+    }
+  }, []);
+
+  const refetchConversation = useCallback(async (id: string): Promise<void> => {
+    try {
+      const response = await fetch(`/api/conversations/${id}`);
+      const data = await response.json();
+      
+      if (data.conversation) {
+        setConversations((prev) => {
+          // Check if conversation exists in the list
+          const exists = prev.some((c) => c.id === id);
+          if (!exists) {
+            // Add the conversation if it doesn't exist
+            const newConv: ConversationSummary = {
+              id: data.conversation.id,
+              title: data.conversation.title,
+              created_at: data.conversation.created_at,
+              updated_at: data.conversation.updated_at,
+              message_count: data.conversation.messages?.length || 0,
+              last_message: data.conversation.messages?.length > 0 ? {
+                role: data.conversation.messages[data.conversation.messages.length - 1].role,
+                preview: data.conversation.messages[data.conversation.messages.length - 1].content.slice(0, 100),
+                timestamp: data.conversation.messages[data.conversation.messages.length - 1].timestamp,
+              } : null,
+            };
+            return [newConv, ...prev].sort((a, b) => 
+              new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+            );
+          }
+          // Update existing conversation
+          return prev.map((c) => c.id === id ? {
+            ...c,
+            title: data.conversation.title,
+            updated_at: data.conversation.updated_at,
+            message_count: data.conversation.messages?.length || 0,
+            last_message: data.conversation.messages?.length > 0 ? {
+              role: data.conversation.messages[data.conversation.messages.length - 1].role,
+              preview: data.conversation.messages[data.conversation.messages.length - 1].content.slice(0, 100),
+              timestamp: data.conversation.messages[data.conversation.messages.length - 1].timestamp,
+            } : null,
+          } : c).sort((a, b) => 
+            new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+          );
+        });
+      }
+    } catch (err) {
+      console.error('Failed to refetch conversation:', err);
+    }
+  }, []);
+
   // Initial load
   useEffect(() => {
     fetchConversations();
@@ -157,5 +230,7 @@ export function useConversations(): UseConversationsReturn {
     selectConversation,
     deleteConversation,
     updateConversationMessages,
+    renameConversation,
+    refetchConversation,
   };
 }

@@ -60,12 +60,15 @@ function App() {
     selectConversation,
     deleteConversation,
     updateConversationMessages,
+    renameConversation,
+    refetchConversation,
   } = useConversations();
 
   const currentUserMessageRef = useRef<string>('');
   const isListeningRef = useRef(false);
   const streamingContentRef = useRef('');
   const hasInitializedConversation = useRef(false);
+  const previousMessageCountRef = useRef(0);
 
   // Keep ref in sync with state for use in callbacks
   useEffect(() => {
@@ -182,8 +185,18 @@ function App() {
   useEffect(() => {
     if (activeConversationId && messages.length > 0) {
       updateConversationMessages(activeConversationId, messages);
+      
+      // If this is the first message (transition from 0 to 1+), 
+      // refetch conversation to get auto-generated title
+      if (previousMessageCountRef.current === 0 && messages.length > 0) {
+        // Small delay to ensure backend has processed the message
+        setTimeout(() => {
+          refetchConversation(activeConversationId);
+        }, 500);
+      }
     }
-  }, [messages, activeConversationId, updateConversationMessages]);
+    previousMessageCountRef.current = messages.length;
+  }, [messages, activeConversationId, updateConversationMessages, refetchConversation]);
 
   // Initialize: Select or create a conversation when app loads
   useEffect(() => {
@@ -293,6 +306,10 @@ function App() {
     }
   }, [deleteConversation, activeConversationId, conversations, handleSelectConversation, handleNewConversation]);
 
+  const handleRenameConversation = useCallback(async (id: string, newTitle: string) => {
+    await renameConversation(id, newTitle);
+  }, [renameConversation]);
+
   const handleToggleListening = useCallback(async () => {
     if (!ollamaStatus.available) return;
     
@@ -378,6 +395,7 @@ function App() {
         onSelectConversation={handleSelectConversation}
         onNewConversation={handleNewConversation}
         onDeleteConversation={handleDeleteConversation}
+        onRenameConversation={handleRenameConversation}
       />
 
       {/* Main Chat Area */}

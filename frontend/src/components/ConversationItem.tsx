@@ -1,3 +1,4 @@
+import { useState, useRef, useEffect } from 'react';
 import { ConversationSummary } from '../types';
 
 interface ConversationItemProps {
@@ -5,6 +6,7 @@ interface ConversationItemProps {
   isActive: boolean;
   onSelect: () => void;
   onDelete: () => void;
+  onRename: (newTitle: string) => void;
 }
 
 // Format relative time
@@ -33,6 +35,15 @@ function TrashIcon() {
   );
 }
 
+// Edit/Pencil icon
+function EditIcon() {
+  return (
+    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+    </svg>
+  );
+}
+
 // Chat icon for conversation
 function ChatIcon() {
   return (
@@ -47,12 +58,64 @@ export function ConversationItem({
   isActive,
   onSelect,
   onDelete,
+  onRename,
 }: ConversationItemProps) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [editTitle, setEditTitle] = useState(conversation.title || 'New Conversation');
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Focus input when editing starts
+  useEffect(() => {
+    if (isEditing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [isEditing]);
+
+  // Update edit title when conversation title changes
+  useEffect(() => {
+    setEditTitle(conversation.title || 'New Conversation');
+  }, [conversation.title]);
+
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (confirm('Delete this conversation?')) {
       onDelete();
     }
+  };
+
+  const handleEdit = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsEditing(true);
+  };
+
+  const handleDoubleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsEditing(true);
+  };
+
+  const handleSave = () => {
+    const trimmedTitle = editTitle.trim();
+    if (trimmedTitle && trimmedTitle !== conversation.title) {
+      onRename(trimmedTitle);
+    } else {
+      setEditTitle(conversation.title || 'New Conversation');
+    }
+    setIsEditing(false);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleSave();
+    } else if (e.key === 'Escape') {
+      setEditTitle(conversation.title || 'New Conversation');
+      setIsEditing(false);
+    }
+  };
+
+  const handleInputClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
   };
 
   return (
@@ -77,11 +140,28 @@ export function ConversationItem({
         {/* Content */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between gap-2">
-            <h3 className={`text-sm font-medium truncate ${
-              isActive ? 'text-white' : 'text-slate-200'
-            }`}>
-              {conversation.title || 'New Conversation'}
-            </h3>
+            {isEditing ? (
+              <input
+                ref={inputRef}
+                type="text"
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+                onBlur={handleSave}
+                onKeyDown={handleKeyDown}
+                onClick={handleInputClick}
+                className="flex-1 text-sm font-medium bg-slate-800 border border-emerald-500/50 rounded px-2 py-0.5 text-white focus:outline-none focus:border-emerald-500 min-w-0"
+              />
+            ) : (
+              <h3 
+                onDoubleClick={handleDoubleClick}
+                className={`text-sm font-medium truncate ${
+                  isActive ? 'text-white' : 'text-slate-200'
+                }`}
+                title="Double-click to edit"
+              >
+                {conversation.title || 'New Conversation'}
+              </h3>
+            )}
             <span className="text-xs text-slate-500 flex-shrink-0">
               {formatRelativeTime(conversation.updated_at)}
             </span>
@@ -97,13 +177,25 @@ export function ConversationItem({
           )}
         </div>
 
-        {/* Delete button */}
-        <button
-          onClick={handleDelete}
-          className="opacity-0 group-hover:opacity-100 p-1.5 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all cursor-pointer"
-        >
-          <TrashIcon />
-        </button>
+        {/* Action buttons */}
+        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+          {!isEditing && (
+            <button
+              onClick={handleEdit}
+              className="p-1.5 text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-lg transition-all cursor-pointer"
+              title="Rename conversation"
+            >
+              <EditIcon />
+            </button>
+          )}
+          <button
+            onClick={handleDelete}
+            className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all cursor-pointer"
+            title="Delete conversation"
+          >
+            <TrashIcon />
+          </button>
+        </div>
       </div>
     </div>
   );

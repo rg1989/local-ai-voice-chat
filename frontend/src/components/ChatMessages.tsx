@@ -87,7 +87,7 @@ export function ChatMessages({
             </button>
             
             <h2 className="text-xl font-semibold text-slate-200 mb-3">
-              {isListening ? 'Listening...' : 'Start a Conversation'}
+              {isListening ? 'Listening...' : 'Start Listening'}
             </h2>
             <p className="text-slate-400 text-sm max-w-md leading-relaxed">
               {isListening 

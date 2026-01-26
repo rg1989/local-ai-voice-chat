@@ -1,28 +1,32 @@
-interface VoiceSelectorProps {
-  voices: { id: string; name: string }[];
-  selectedVoice: string;
-  onChange: (voice: string) => void;
+interface ModelSelectorProps {
+  models: string[];
+  selectedModel: string;
+  onChange: (model: string) => void;
   disabled: boolean;
 }
 
-export function VoiceSelector({
-  voices,
-  selectedVoice,
+export function ModelSelector({
+  models,
+  selectedModel,
   onChange,
   disabled,
-}: VoiceSelectorProps) {
+}: ModelSelectorProps) {
+  if (models.length === 0) {
+    return null;
+  }
+
   return (
     <div className="flex items-center gap-2">
-      <label className="text-slate-500 text-xs font-medium uppercase tracking-wide">Voice:</label>
+      <label className="text-slate-500 text-xs font-medium uppercase tracking-wide">Model:</label>
       <select
-        value={selectedVoice}
+        value={selectedModel}
         onChange={(e) => onChange(e.target.value)}
         disabled={disabled}
         className="bg-[#2a2d32] border border-slate-600/50 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-emerald-500/50 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-colors"
       >
-        {voices.map((voice) => (
-          <option key={voice.id} value={voice.id}>
-            {voice.name}
+        {models.map((model) => (
+          <option key={model} value={model}>
+            {model}
           </option>
         ))}
       </select>

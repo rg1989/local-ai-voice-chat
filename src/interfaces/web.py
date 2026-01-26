@@ -7,12 +7,14 @@ from pathlib import Path
 from typing import Optional
 
 import numpy as np
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Body, Query
 from fastapi.responses import FileResponse, HTMLResponse
+from pydantic import BaseModel
 from fastapi.staticfiles import StaticFiles
 
 from ..config import settings
 from ..pipeline.llm import LLMClient
+from ..storage.conversations import ConversationStorage
 from ..pipeline.sentencizer import StreamingSentencizer
 from ..pipeline.stt import SpeechToText
 from ..pipeline.tts import TextToSpeech
@@ -49,8 +51,15 @@ class ConnectionManager:
         if websocket in self.active_connections:
             self.active_connections.remove(websocket)
 
-    async def send_json(self, websocket: WebSocket, data: dict) -> None:
-        await websocket.send_json(data)
+    async def send_json(self, websocket: WebSocket, data: dict) -> bool:
+        """Send JSON data to websocket. Returns False if connection is closed."""
+        try:
+            await websocket.send_json(data)
+            return True
+        except RuntimeError as e:
+            if "close" in str(e).lower() or "disconnect" in str(e).lower():
+                return False
+            raise
 
     async def broadcast_json(self, data: dict) -> None:
         for connection in self.active_connections:
@@ -58,6 +67,9 @@ class ConnectionManager:
 
 
 manager = ConnectionManager()
+
+# Global conversation storage
+conversation_storage = ConversationStorage()
 
 
 class VoiceChatSession:
@@ -82,7 +94,7 @@ class VoiceChatSession:
         
         print("Models preloaded!")
 
-    def __init__(self, websocket: WebSocket):
+    def __init__(self, websocket: WebSocket, conversation_id: Optional[str] = None):
         self.websocket = websocket
         self.vad = VoiceActivityDetector()
         
@@ -103,6 +115,34 @@ class VoiceChatSession:
         self._audio_buffer: list[np.ndarray] = []
         self._is_speaking = False
         self._cancel_requested = False
+        self._processing_task: Optional[asyncio.Task] = None
+        
+        # Conversation persistence
+        self.conversation_id = conversation_id
+        self._load_conversation_history()
+
+    def _load_conversation_history(self) -> None:
+        """Load conversation history from storage into LLM context."""
+        if self.conversation_id:
+            conversation = conversation_storage.load(self.conversation_id)
+            if conversation:
+                # Load existing messages into LLM history
+                for msg in conversation.messages:
+                    if msg.role == "user":
+                        self.llm.history.add_user_message(msg.content)
+                    elif msg.role == "assistant":
+                        self.llm.history.add_assistant_message(msg.content)
+
+    def set_conversation(self, conversation_id: str) -> None:
+        """Switch to a different conversation."""
+        self.conversation_id = conversation_id
+        self.llm.clear_history()
+        self._load_conversation_history()
+
+    def _save_message(self, role: str, content: str) -> None:
+        """Save a message to the current conversation."""
+        if self.conversation_id and content.strip():
+            conversation_storage.add_message(self.conversation_id, role, content)
 
     async def send_status(self, status: str, data: Optional[dict] = None) -> None:
         """Send status update to client."""
@@ -144,6 +184,10 @@ class VoiceChatSession:
 
     async def process_audio_chunk(self, audio_data: bytes) -> None:
         """Process incoming audio chunk."""
+        # Skip if already processing
+        if self._processing_task and not self._processing_task.done():
+            return
+            
         # Convert bytes to numpy array (assuming 16-bit PCM)
         audio = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / 32768.0
 
@@ -156,70 +200,118 @@ class VoiceChatSession:
 
         elif result.state == SpeechState.SPEECH_END:
             self._is_speaking = False
-            await self.process_speech_end()
+            # Run processing in background task so we can receive stop messages
+            self._processing_task = asyncio.create_task(self.process_speech_end())
 
     async def process_speech_end(self) -> None:
         """Process end of speech segment."""
-        # Get accumulated speech from VAD
-        speech_audio = self.vad.get_speech_audio()
-        
-        # Reset VAD for next utterance
-        self.vad.reset()
-        
-        if speech_audio is None or len(speech_audio) < settings.audio.sample_rate * 0.5:
-            await self.send_status("listening")
-            return
+        try:
+            # Get accumulated speech from VAD
+            speech_audio = self.vad.get_speech_audio()
+            
+            # Reset VAD for next utterance
+            self.vad.reset()
+            
+            if speech_audio is None or len(speech_audio) < settings.audio.sample_rate * 0.5:
+                print(f"[DEBUG] Audio too short or empty, returning to listening")
+                await self.send_status("listening")
+                return
 
-        # Transcribe
-        await self.send_status("transcribing")
-        result = await self.stt.transcribe_async(speech_audio, settings.audio.sample_rate)
+            print(f"[DEBUG] Starting transcription of {len(speech_audio)} samples...")
+            
+            # Transcribe
+            await self.send_status("transcribing")
+            result = await self.stt.transcribe_async(speech_audio, settings.audio.sample_rate)
+            
+            print(f"[DEBUG] Transcription complete: '{result.text}'")
 
-        if not result.text.strip():
-            await self.send_status("ready")
-            return
-
-        await self.send_transcription(result.text)
-
-        # Get LLM response
-        await self.send_status("thinking")
-
-        self.sentencizer.reset()
-        full_response = []
-        cancelled = False
-
-        # Stream response
-        async for token in await self.llm.chat_async(result.text, stream=True):
-            # Check for cancellation
+            # Check for cancellation after transcription
             if self._cancel_requested:
                 self._cancel_requested = False
-                cancelled = True
-                break
-                
-            await self.send_response_token(token)
-            full_response.append(token)
+                print("[DEBUG] Cancelled after transcription")
+                await self.send_status("listening")
+                return
 
-            # Check for complete sentence
-            sentence = self.sentencizer.add_token(token)
-            if sentence:
+            if not result.text.strip():
+                print("[DEBUG] Empty transcription, returning to listening")
+                await self.send_status("listening")
+                return
+
+            await self.send_transcription(result.text)
+            transcribed_text = result.text  # Store for use in LLM call
+            
+            # Save user message to conversation
+            self._save_message("user", transcribed_text)
+
+            # Check for cancellation before LLM
+            if self._cancel_requested:
+                self._cancel_requested = False
+                print("[DEBUG] Cancelled before LLM")
+                await self.send_status("listening")
+                return
+
+            # Get LLM response
+            print(f"[DEBUG] Starting LLM call with model: {self.llm.model_name}")
+            await self.send_status("thinking")
+
+            self.sentencizer.reset()
+            full_response = []
+            cancelled = False
+
+            # Stream response
+            async for token in await self.llm.chat_async(transcribed_text, stream=True):
+                # Check for cancellation
                 if self._cancel_requested:
                     self._cancel_requested = False
                     cancelled = True
                     break
-                await self.synthesize_and_send(sentence)
+                    
+                await self.send_response_token(token)
+                full_response.append(token)
 
-        if cancelled:
-            await self.send_status("stopped")
+                # Check for complete sentence
+                sentence = self.sentencizer.add_token(token)
+                if sentence:
+                    if self._cancel_requested:
+                        self._cancel_requested = False
+                        cancelled = True
+                        break
+                    await self.synthesize_and_send(sentence)
+
+            if cancelled:
+                print("[DEBUG] Cancelled during LLM streaming")
+                await self.send_status("stopped")
+                await self.send_status("listening")
+                return
+
+            # Flush remaining
+            remaining = self.sentencizer.flush()
+            if remaining and not self._cancel_requested:
+                await self.synthesize_and_send(remaining)
+
+            await self.send_response_end()
+            
+            # Save assistant message to conversation
+            full_response_text = "".join(full_response)
+            self._save_message("assistant", full_response_text)
+            
+            print(f"[DEBUG] Response complete: {len(full_response)} tokens")
+            
+            # Send "listening" to resume audio streaming
             await self.send_status("listening")
+            
+        except asyncio.CancelledError:
+            print("[DEBUG] Task was cancelled")
             return
-
-        # Flush remaining
-        remaining = self.sentencizer.flush()
-        if remaining and not self._cancel_requested:
-            await self.synthesize_and_send(remaining)
-
-        await self.send_response_end()
-        # Send "listening" to resume audio streaming
-        await self.send_status("listening")
+        except Exception as e:
+            print(f"[ERROR] Processing error: {e}")
+            import traceback
+            traceback.print_exc()
+            await manager.send_json(
+                self.websocket,
+                {"type": "error", "message": f"Error: {str(e)}"}
+            )
+            await self.send_status("listening")
 
     async def synthesize_and_send(self, text: str) -> None:
         """Synthesize text and send audio to client."""
@@ -230,46 +322,78 @@ class VoiceChatSession:
 
     async def process_text_message(self, text: str) -> None:
         """Process a text message (for text-only mode)."""
-        await self.send_transcription(text)
-        await self.send_status("thinking")
+        try:
+            await self.send_transcription(text)
+            
+            # Save user message to conversation
+            self._save_message("user", text)
+            
+            await self.send_status("thinking")
 
-        self.sentencizer.reset()
-        cancelled = False
+            self.sentencizer.reset()
+            cancelled = False
+            full_response = []
 
-        # Stream response
-        async for token in await self.llm.chat_async(text, stream=True):
-            # Check for cancellation
-            if self._cancel_requested:
-                self._cancel_requested = False
-                cancelled = True
-                break
-                
-            await self.send_response_token(token)
-
-            sentence = self.sentencizer.add_token(token)
-            if sentence:
+            # Stream response
+            async for token in await self.llm.chat_async(text, stream=True):
+                # Check for cancellation
                 if self._cancel_requested:
                     self._cancel_requested = False
                     cancelled = True
                     break
-                await self.synthesize_and_send(sentence)
+                    
+                await self.send_response_token(token)
+                full_response.append(token)
 
-        if cancelled:
-            await self.send_status("stopped")
+                sentence = self.sentencizer.add_token(token)
+                if sentence:
+                    if self._cancel_requested:
+                        self._cancel_requested = False
+                        cancelled = True
+                        break
+                    await self.synthesize_and_send(sentence)
+
+            if cancelled:
+                return
+
+            remaining = self.sentencizer.flush()
+            if remaining and not self._cancel_requested:
+                await self.synthesize_and_send(remaining)
+
+            await self.send_response_end()
+            
+            # Save assistant message to conversation
+            full_response_text = "".join(full_response)
+            self._save_message("assistant", full_response_text)
+            
+            # Send "listening" to resume audio streaming
             await self.send_status("listening")
+            
+        except asyncio.CancelledError:
+            # Task was cancelled
             return
-
-        remaining = self.sentencizer.flush()
-        if remaining and not self._cancel_requested:
-            await self.synthesize_and_send(remaining)
-
-        await self.send_response_end()
-        # Send "listening" to resume audio streaming
-        await self.send_status("listening")
+        except Exception as e:
+            print(f"LLM error: {e}")
+            await manager.send_json(
+                self.websocket,
+                {"type": "error", "message": f"LLM error: {str(e)}"}
+            )
+            await self.send_status("listening")
 
     def request_cancel(self) -> None:
         """Request cancellation of current processing."""
         self._cancel_requested = True
+        # Cancel the processing task if running
+        if self._processing_task and not self._processing_task.done():
+            self._processing_task.cancel()
+
+    async def request_cancel_async(self) -> None:
+        """Request cancellation and send status update."""
+        self.request_cancel()
+        await self.send_status("stopped")
+        await self.send_status("listening")
+        # Reset VAD state
+        self.vad.reset()
 
     def cleanup(self) -> None:
         """Cleanup resources."""
@@ -303,11 +427,18 @@ async def websocket_chat(websocket: WebSocket):
                 msg_type = data.get("type")
 
                 if msg_type == "text":
-                    # Text message
-                    await session.process_text_message(data.get("text", ""))
+                    # Text message - run in background task so we can receive stop
+                    if session._processing_task and not session._processing_task.done():
+                        continue  # Skip if already processing
+                    session._processing_task = asyncio.create_task(
+                        session.process_text_message(data.get("text", ""))
+                    )
 
                 elif msg_type == "clear_history":
                     session.llm.clear_history()
+                    # Also clear messages in storage if conversation exists
+                    if session.conversation_id:
+                        conversation_storage.clear_messages(session.conversation_id)
                     await session.send_status("history_cleared")
 
                 elif msg_type == "set_voice":
@@ -317,7 +448,19 @@ async def websocket_chat(websocket: WebSocket):
                         await session.send_status("voice_changed", {"voice": voice})
 
                 elif msg_type == "stop":
-                    session.request_cancel()
+                    await session.request_cancel_async()
+
+                elif msg_type == "set_model":
+                    model = data.get("model")
+                    if model:
+                        session.llm.model_name = model
+                        await session.send_status("model_changed", {"model": model})
+
+                elif msg_type == "set_conversation":
+                    conversation_id = data.get("conversation_id")
+                    if conversation_id:
+                        session.set_conversation(conversation_id)
+                        await session.send_status("conversation_changed", {"conversation_id": conversation_id})
 
     except WebSocketDisconnect:
         pass
@@ -333,7 +476,8 @@ async def websocket_chat(websocket: WebSocket):
 @app.get("/api/voices")
 async def get_voices():
     """Get available TTS voices."""
-    return {"voices": TextToSpeech.list_voices()}
+    # Return list of voice IDs for frontend compatibility
+    return {"voices": list(TextToSpeech.list_voices().keys())}
 
 
 @app.get("/api/health")
@@ -348,6 +492,115 @@ async def health_check():
         "ollama": ollama_ok,
         "model": settings.llm.model_name,
     }
+
+
+@app.get("/api/models")
+async def get_models():
+    """Get available Ollama models."""
+    llm = LLMClient()
+    try:
+        response = await llm._async_client.get(f"{llm.base_url}/api/tags")
+        response.raise_for_status()
+        data = response.json()
+        models = [m.get("name") for m in data.get("models", [])]
+        return {
+            "models": models,
+            "current": settings.llm.model_name,
+            "available": True,
+        }
+    except Exception as e:
+        return {
+            "models": [],
+            "current": None,
+            "available": False,
+            "error": f"Ollama not available: {str(e)}. Run: ollama serve && ollama pull qwen3:8b",
+        }
+    finally:
+        await llm.aclose()
+
+
+# ===== Conversation CRUD Endpoints =====
+
+
+class CreateConversationRequest(BaseModel):
+    """Request body for creating a conversation."""
+    title: str = "New Conversation"
+
+
+class UpdateConversationRequest(BaseModel):
+    """Request body for updating a conversation."""
+    title: Optional[str] = None
+
+
+class AddMessageRequest(BaseModel):
+    """Request body for adding a message."""
+    role: str
+    content: str
+
+
+@app.get("/api/conversations")
+async def list_conversations():
+    """List all conversations (summaries only, sorted by updated_at)."""
+    summaries = conversation_storage.list_summaries()
+    return {"conversations": summaries}
+
+
+@app.get("/api/conversations/{conversation_id}")
+async def get_conversation(conversation_id: str):
+    """Get a single conversation with all messages."""
+    conversation = conversation_storage.load(conversation_id)
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    return {"conversation": conversation.to_dict()}
+
+
+@app.post("/api/conversations")
+async def create_conversation(request: CreateConversationRequest = Body(default=CreateConversationRequest())):
+    """Create a new conversation."""
+    conversation = conversation_storage.create(request.title)
+    return {"conversation": conversation.to_dict()}
+
+
+@app.put("/api/conversations/{conversation_id}")
+async def update_conversation(conversation_id: str, request: UpdateConversationRequest):
+    """Update a conversation title."""
+    conversation = conversation_storage.load(conversation_id)
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    # Update title if provided
+    if request.title is not None:
+        conversation.title = request.title
+
+    conversation_storage.save(conversation)
+    return {"conversation": conversation.to_dict()}
+
+
+@app.delete("/api/conversations/{conversation_id}")
+async def delete_conversation(conversation_id: str):
+    """Delete a conversation."""
+    success = conversation_storage.delete(conversation_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    return {"success": True}
+
+
+@app.post("/api/conversations/{conversation_id}/messages")
+async def add_message(conversation_id: str, request: AddMessageRequest):
+    """Add a message to a conversation."""
+    message = conversation_storage.add_message(conversation_id, request.role, request.content)
+    if message is None:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    return {"message": message.to_dict()}
+
+
+@app.delete("/api/conversations/{conversation_id}/messages")
+async def clear_messages(conversation_id: str):
+    """Clear all messages from a conversation."""
+    success = conversation_storage.clear_messages(conversation_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    return {"success": True}
 
 
 # Serve the web UI

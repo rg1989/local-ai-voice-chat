@@ -77,9 +77,9 @@ class LLMClient:
 
         self.history = ChatHistory()
 
-        # HTTP clients
-        self._client = httpx.Client(timeout=60.0)
-        self._async_client = httpx.AsyncClient(timeout=60.0)
+        # HTTP clients with longer timeout for streaming
+        self._client = httpx.Client(timeout=120.0)
+        self._async_client = httpx.AsyncClient(timeout=120.0)
 
     def _build_messages(self, user_message: str) -> list[dict]:
         """Build messages list with system prompt and history."""

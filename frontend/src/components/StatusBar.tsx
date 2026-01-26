@@ -37,14 +37,19 @@ export function StatusBar({ state, onStop }: StatusBarProps) {
 
   const { text, indicatorClass } = statusConfig[state];
 
+  // Only show status bar when not idle
+  if (state === AppState.IDLE) {
+    return null;
+  }
+
   return (
-    <div className="flex items-center justify-center gap-3 px-5 py-3 bg-slate-800/50 rounded-xl mx-4 mt-4">
-      <div className={`w-3 h-3 rounded-full ${indicatorClass}`} />
-      <span className="text-slate-300 text-sm">{text}</span>
+    <div className="flex items-center justify-center gap-3 px-5 py-2.5 bg-[#1e2227] border-b border-slate-700/50">
+      <div className={`w-2.5 h-2.5 rounded-full ${indicatorClass}`} />
+      <span className="text-slate-300 text-sm font-medium">{text}</span>
       {isProcessing && (
         <button
           onClick={onStop}
-          className="ml-4 px-4 py-1.5 bg-red-600 hover:bg-red-700 text-white text-sm font-medium rounded-lg transition-colors"
+          className="ml-4 px-4 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-medium rounded-lg transition-colors cursor-pointer"
         >
           Stop
         </button>

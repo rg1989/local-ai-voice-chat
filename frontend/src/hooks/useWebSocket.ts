@@ -92,6 +92,14 @@ export function useWebSocket({ onMessage, onOpen, onClose, onError }: UseWebSock
     sendJson({ type: 'set_voice', voice });
   }, [sendJson]);
 
+  const sendSetModel = useCallback((model: string) => {
+    sendJson({ type: 'set_model', model });
+  }, [sendJson]);
+
+  const sendSetConversation = useCallback((conversationId: string) => {
+    sendJson({ type: 'set_conversation', conversation_id: conversationId });
+  }, [sendJson]);
+
   useEffect(() => {
     connect();
     return () => disconnect();
@@ -105,5 +113,7 @@ export function useWebSocket({ onMessage, onOpen, onClose, onError }: UseWebSock
     sendStop,
     sendClearHistory,
     sendSetVoice,
+    sendSetModel,
+    sendSetConversation,
   };
 }

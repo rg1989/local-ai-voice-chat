@@ -4,11 +4,20 @@ interface UseAudioStreamOptions {
   onAudioChunk: (data: ArrayBuffer) => void;
 }
 
+interface QueuedAudio {
+  base64Audio: string;
+  sampleRate: number;
+}
+
 export function useAudioStream({ onAudioChunk }: UseAudioStreamOptions) {
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const scriptProcessorRef = useRef<ScriptProcessorNode | null>(null);
   const playbackContextRef = useRef<AudioContext | null>(null);
+  
+  // Audio playback queue
+  const audioQueueRef = useRef<QueuedAudio[]>([]);
+  const isPlayingRef = useRef(false);
 
   const startListening = useCallback(async () => {
     try {
@@ -75,7 +84,8 @@ export function useAudioStream({ onAudioChunk }: UseAudioStreamOptions) {
     }
   }, []);
 
-  const playAudio = useCallback(async (base64Audio: string, sampleRate: number) => {
+  // Internal function to play a single audio segment
+  const playAudioSegment = useCallback(async (base64Audio: string, sampleRate: number): Promise<void> => {
     try {
       // Create or reuse playback context
       if (!playbackContextRef.current || playbackContextRef.current.state === 'closed') {
@@ -117,18 +127,49 @@ export function useAudioStream({ onAudioChunk }: UseAudioStreamOptions) {
     }
   }, []);
 
-  const cleanup = useCallback(() => {
-    stopListening();
+  // Process the audio queue sequentially
+  const processAudioQueue = useCallback(async () => {
+    if (isPlayingRef.current) return;
+    
+    isPlayingRef.current = true;
+    
+    while (audioQueueRef.current.length > 0) {
+      const segment = audioQueueRef.current.shift();
+      if (segment) {
+        await playAudioSegment(segment.base64Audio, segment.sampleRate);
+      }
+    }
+    
+    isPlayingRef.current = false;
+  }, [playAudioSegment]);
+
+  // Public function to queue audio for playback
+  const playAudio = useCallback((base64Audio: string, sampleRate: number) => {
+    audioQueueRef.current.push({ base64Audio, sampleRate });
+    processAudioQueue();
+  }, [processAudioQueue]);
+
+  // Clear the audio queue (used when stopping)
+  const clearAudioQueue = useCallback(() => {
+    audioQueueRef.current = [];
+    // Close and recreate context to stop any currently playing audio
     if (playbackContextRef.current && playbackContextRef.current.state !== 'closed') {
       playbackContextRef.current.close();
       playbackContextRef.current = null;
     }
-  }, [stopListening]);
+    isPlayingRef.current = false;
+  }, []);
+
+  const cleanup = useCallback(() => {
+    stopListening();
+    clearAudioQueue();
+  }, [stopListening, clearAudioQueue]);
 
   return {
     startListening,
     stopListening,
     playAudio,
+    clearAudioQueue,
     cleanup,
   };
 }

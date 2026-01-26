@@ -1,5 +1,25 @@
 @import "tailwindcss";
 
+/* Root variables for theming */
+:root {
+  --bg-primary: #15181c;
+  --bg-secondary: #1e2227;
+  --bg-tertiary: #2a2d32;
+  --border-color: rgba(71, 85, 105, 0.3);
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --accent-emerald: #10b981;
+  --accent-indigo: #6366f1;
+  --accent-pink: #ec4899;
+}
+
+/* Base styles */
+body {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+}
+
 /* Custom animations */
 @keyframes pulse-slow {
   0%, 100% { opacity: 1; }
@@ -11,6 +31,16 @@
   50% { transform: scaleY(1.5); }
 }
 
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slide-in {
+  from { opacity: 0; transform: translateX(-10px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
 .animate-pulse-slow {
   animation: pulse-slow 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
@@ -19,20 +49,84 @@
   animation: wave 0.5s ease-in-out infinite;
 }
 
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out forwards;
+}
+
+.animate-slide-in {
+  animation: slide-in 0.2s ease-out forwards;
+}
+
 /* Scrollbar styling */
 ::-webkit-scrollbar {
-  width: 8px;
+  width: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #1e293b;
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #475569;
-  border-radius: 4px;
+  background: rgba(100, 116, 139, 0.4);
+  border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #64748b;
+  background: rgba(100, 116, 139, 0.6);
+}
+
+/* Custom focus styles */
+*:focus-visible {
+  outline: 2px solid var(--accent-emerald);
+  outline-offset: 2px;
+}
+
+/* Message animation */
+.message-enter {
+  animation: fade-in 0.3s ease-out forwards;
+}
+
+/* Sidebar transition */
+.sidebar-item {
+  transition: all 0.2s ease;
+}
+
+/* Gradient text */
+.gradient-text {
+  background: linear-gradient(135deg, var(--accent-emerald), #14b8a6);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Glass effect for cards */
+.glass-card {
+  background: rgba(30, 34, 39, 0.8);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--border-color);
+}
+
+/* Input styling */
+input[type="text"],
+textarea {
+  background-color: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+input[type="text"]:focus,
+textarea:focus {
+  border-color: var(--accent-emerald);
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.1);
+}
+
+/* Button hover effects */
+button {
+  transition: all 0.2s ease;
+}
+
+/* Selection styling */
+::selection {
+  background-color: rgba(16, 185, 129, 0.3);
+  color: var(--text-primary);
 }

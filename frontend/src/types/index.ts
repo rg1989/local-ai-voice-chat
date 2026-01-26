@@ -19,6 +19,28 @@ export interface Voice {
   language: string;
 }
 
+// Conversation types
+export interface ConversationSummary {
+  id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  message_count: number;
+  last_message: {
+    role: 'user' | 'assistant';
+    preview: string;
+    timestamp: string;
+  } | null;
+}
+
+export interface Conversation {
+  id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  messages: Message[];
+}
+
 // WebSocket message types
 export interface WSStatusMessage {
   type: 'status';

@@ -163,7 +163,7 @@ export function ConversationItem({
               </h3>
             )}
             <span className="text-xs text-slate-500 flex-shrink-0">
-              {formatRelativeTime(conversation.updated_at)}
+              {formatRelativeTime(conversation.last_message?.timestamp || conversation.created_at)}
             </span>
           </div>
           

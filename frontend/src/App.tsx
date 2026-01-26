@@ -7,7 +7,7 @@ import { ControlBar } from './components/ControlBar';
 import { useWebSocket } from './hooks/useWebSocket';
 import { useAudioStream } from './hooks/useAudioStream';
 import { useConversations } from './hooks/useConversations';
-import { AppState, Message, WSMessage, ConversationSummary } from './types';
+import { AppState, Message, WSMessage, ConversationSummary, MemoryUsage } from './types';
 import { generateId } from './utils/audioUtils';
 
 // Voice mapping for display
@@ -54,6 +54,9 @@ function App() {
   
   // Toast notification state
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  
+  // Memory usage tracking (context window)
+  const [memoryUsage, setMemoryUsage] = useState<MemoryUsage | null>(null);
 
   // Conversation management
   const {
@@ -84,6 +87,11 @@ function App() {
     switch (message.type) {
       case 'status':
         handleStatusUpdate(message.status);
+        // Update memory usage if included in status message
+        if (message.memory) {
+          console.log('[Memory] Received:', message.memory);
+          setMemoryUsage(message.memory);
+        }
         break;
       case 'transcription':
         // Add user message
@@ -284,6 +292,11 @@ function App() {
       sendSetModel(selectedModel);
       sendSetVoice(selectedVoice);
       sendSetTtsEnabled(ttsEnabled);
+      
+      // IMPORTANT: Also set the active conversation so messages are saved
+      if (activeConversationId) {
+        sendSetConversation(activeConversationId);
+      }
     }
   }, [isConnected]); // Only run when connection state changes
 
@@ -296,6 +309,7 @@ function App() {
     const loadedMessages = await selectConversation(id);
     setMessages(loadedMessages);
     setStreamingContent('');
+    setMemoryUsage(null);  // Reset memory indicator immediately
     
     // Notify backend about conversation switch
     if (isConnected) {
@@ -308,6 +322,7 @@ function App() {
     if (newId) {
       setMessages([]);
       setStreamingContent('');
+      setMemoryUsage(null);  // Reset memory indicator
       
       // Notify backend about new conversation
       if (isConnected) {
@@ -381,6 +396,7 @@ function App() {
     sendClearHistory();
     setMessages([]);
     setStreamingContent('');
+    setMemoryUsage(null);  // Reset memory indicator
   }, [sendClearHistory]);
 
   const handleVoiceChange = useCallback(
@@ -454,6 +470,7 @@ function App() {
           isConnected={isConnected}
           ttsEnabled={ttsEnabled}
           onTtsToggle={handleTtsToggle}
+          memoryUsage={memoryUsage}
         />
 
         {/* Ollama error banner */}

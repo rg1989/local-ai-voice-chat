@@ -80,6 +80,11 @@ class LLMClient:
         # HTTP clients with longer timeout for streaming
         self._client = httpx.Client(timeout=120.0)
         self._async_client = httpx.AsyncClient(timeout=120.0)
+        
+        # Context window tracking (populated from Ollama)
+        self._context_window: int = 2048  # Default, updated by fetch_context_window
+        self._last_prompt_tokens: int = 0  # Actual tokens used (from Ollama response)
+        self._context_window_fetched: bool = False
 
     def _build_messages(self, user_message: str) -> list[dict]:
         """Build messages list with system prompt and history."""
@@ -122,6 +127,9 @@ class LLMClient:
 
         result = response.json()
         assistant_message = result.get("message", {}).get("content", "")
+        
+        # Capture actual token counts from Ollama
+        self._last_prompt_tokens = result.get("prompt_eval_count", 0)
 
         # Update history
         self.history.add_user_message(user_message)
@@ -161,6 +169,8 @@ class LLMClient:
                                 yield content
 
                         if data.get("done", False):
+                            # Capture actual token counts from Ollama
+                            self._last_prompt_tokens = data.get("prompt_eval_count", 0)
                             break
                     except json.JSONDecodeError:
                         continue
@@ -205,6 +215,9 @@ class LLMClient:
 
         result = response.json()
         assistant_message = result.get("message", {}).get("content", "")
+        
+        # Capture actual token counts from Ollama
+        self._last_prompt_tokens = result.get("prompt_eval_count", 0)
 
         # Update history
         self.history.add_user_message(user_message)
@@ -244,6 +257,8 @@ class LLMClient:
                                 yield content
 
                         if data.get("done", False):
+                            # Capture actual token counts from Ollama
+                            self._last_prompt_tokens = data.get("prompt_eval_count", 0)
                             break
                     except json.JSONDecodeError:
                         continue
@@ -255,6 +270,7 @@ class LLMClient:
     def clear_history(self) -> None:
         """Clear conversation history."""
         self.history.clear()
+        self._last_prompt_tokens = 0
 
     async def check_connection(self) -> bool:
         """Check if Ollama is running and model is available.
@@ -273,6 +289,103 @@ class LLMClient:
             return any(model_base in m for m in models)
         except Exception:
             return False
+
+    async def fetch_context_window(self) -> int:
+        """Query Ollama for the model's context window size.
+        
+        Returns:
+            Context window size in tokens
+        """
+        try:
+            response = await self._async_client.post(
+                f"{self.base_url}/api/show",
+                json={"model": self.model_name}
+            )
+            response.raise_for_status()
+            data = response.json()
+            
+            # Try to get from model_info (e.g., "qwen3.context_length")
+            model_info = data.get("model_info", {})
+            for key, value in model_info.items():
+                if key.endswith(".context_length") and isinstance(value, int):
+                    self._context_window = value
+                    self._context_window_fetched = True
+                    print(f"[DEBUG] Context window from model_info: {value} (key: {key})")
+                    return value
+            
+            # Fallback: parse from parameters string "num_ctx XXXX"
+            params = data.get("parameters", "")
+            print(f"[DEBUG] No context_length in model_info, checking parameters...")
+            if "num_ctx" in params:
+                for line in params.split("\n"):
+                    if "num_ctx" in line:
+                        parts = line.strip().split()
+                        if len(parts) >= 2:
+                            try:
+                                self._context_window = int(parts[1])
+                                self._context_window_fetched = True
+                                return self._context_window
+                            except ValueError:
+                                pass
+        except Exception:
+            pass
+        
+        return self._context_window
+
+    def estimate_tokens(self, text: str) -> int:
+        """Estimate token count from text (~4 chars per token for English).
+        
+        Args:
+            text: Text to estimate tokens for
+            
+        Returns:
+            Estimated token count
+        """
+        return len(text) // 4 + 1
+
+    def estimate_history_tokens(self) -> int:
+        """Estimate total tokens in current conversation history.
+        
+        Returns:
+            Estimated total tokens including system prompt
+        """
+        # System prompt tokens
+        total = self.estimate_tokens(self.system_prompt)
+        
+        # History tokens
+        for msg in self.history.messages:
+            total += self.estimate_tokens(msg.content)
+            # Add overhead for role markers (~4 tokens per message)
+            total += 4
+        
+        return total
+
+    def update_token_estimate_from_history(self) -> None:
+        """Update _last_prompt_tokens based on current history.
+        
+        Call this after loading conversation history to have an accurate
+        estimate before the first LLM call.
+        """
+        self._last_prompt_tokens = self.estimate_history_tokens()
+
+    def get_memory_usage(self) -> dict:
+        """Return memory usage stats for the client.
+        
+        Returns:
+            Dict with used_tokens, max_tokens, percentage, is_near_limit
+        """
+        # Reserve buffer for system prompt and response generation
+        buffer = 512
+        available = max(1, self._context_window - buffer)
+        used = self._last_prompt_tokens
+        percentage = min(100, int((used / available) * 100)) if available > 0 else 0
+        
+        return {
+            "used_tokens": used,
+            "max_tokens": available,
+            "percentage": percentage,
+            "is_near_limit": percentage > 80
+        }
 
     def close(self) -> None:
         """Close HTTP clients."""

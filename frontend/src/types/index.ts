@@ -41,11 +41,20 @@ export interface Conversation {
   messages: Message[];
 }
 
+// Memory usage tracking
+export interface MemoryUsage {
+  used_tokens: number;
+  max_tokens: number;
+  percentage: number;
+  is_near_limit: boolean;
+}
+
 // WebSocket message types
 export interface WSStatusMessage {
   type: 'status';
   status: string;
   data?: Record<string, unknown>;
+  memory?: MemoryUsage;
 }
 
 export interface WSTranscriptionMessage {

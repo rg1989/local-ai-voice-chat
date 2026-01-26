@@ -133,14 +133,21 @@ export function useConversations(): UseConversationsReturn {
         return {
           ...conv,
           message_count: messages.length,
-          updated_at: new Date().toISOString(),
+          // Only update updated_at if there's a new message
+          updated_at: lastMsg ? lastMsg.timestamp.toISOString() : conv.updated_at,
           last_message: lastMsg ? {
             role: lastMsg.role,
             preview: lastMsg.content.slice(0, 100) + (lastMsg.content.length > 100 ? '...' : ''),
             timestamp: lastMsg.timestamp.toISOString(),
           } : null,
         };
-      }).sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
+      }).sort((a, b) => {
+        // Sort by last message timestamp (most recent first)
+        // Conversations with no messages go to the bottom
+        const aTime = a.last_message?.timestamp || a.created_at;
+        const bTime = b.last_message?.timestamp || b.created_at;
+        return new Date(bTime).getTime() - new Date(aTime).getTime();
+      })
     );
   }, []);
 
@@ -167,6 +174,15 @@ export function useConversations(): UseConversationsReturn {
     }
   }, []);
 
+  // Helper function to sort conversations by last message time
+  const sortByLastMessage = (convs: ConversationSummary[]) => {
+    return convs.sort((a, b) => {
+      const aTime = a.last_message?.timestamp || a.created_at;
+      const bTime = b.last_message?.timestamp || b.created_at;
+      return new Date(bTime).getTime() - new Date(aTime).getTime();
+    });
+  };
+
   const refetchConversation = useCallback(async (id: string): Promise<void> => {
     try {
       const response = await fetch(`/api/conversations/${id}`);
@@ -190,12 +206,10 @@ export function useConversations(): UseConversationsReturn {
                 timestamp: data.conversation.messages[data.conversation.messages.length - 1].timestamp,
               } : null,
             };
-            return [newConv, ...prev].sort((a, b) => 
-              new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
-            );
+            return sortByLastMessage([newConv, ...prev]);
           }
           // Update existing conversation
-          return prev.map((c) => c.id === id ? {
+          return sortByLastMessage(prev.map((c) => c.id === id ? {
             ...c,
             title: data.conversation.title,
             updated_at: data.conversation.updated_at,
@@ -205,9 +219,7 @@ export function useConversations(): UseConversationsReturn {
               preview: data.conversation.messages[data.conversation.messages.length - 1].content.slice(0, 100),
               timestamp: data.conversation.messages[data.conversation.messages.length - 1].timestamp,
             } : null,
-          } : c).sort((a, b) => 
-            new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
-          );
+          } : c));
         });
       }
     } catch (err) {

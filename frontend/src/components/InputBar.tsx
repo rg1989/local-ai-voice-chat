@@ -8,6 +8,16 @@ interface InputBarProps {
 export function InputBar({ onSend, disabled }: InputBarProps) {
   const [text, setText] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const wasDisabledRef = useRef(disabled);
+
+  // Auto-focus when re-enabled (after response completes)
+  useEffect(() => {
+    if (wasDisabledRef.current && !disabled) {
+      // Was disabled, now enabled - focus the input
+      textareaRef.current?.focus();
+    }
+    wasDisabledRef.current = disabled;
+  }, [disabled]);
 
   // Only resize when text contains newlines
   useEffect(() => {

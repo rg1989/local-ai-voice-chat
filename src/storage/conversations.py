@@ -162,8 +162,13 @@ class ConversationStorage:
                 print(f"Error loading {file_path}: {e}")
                 continue
 
-        # Sort by updated_at, newest first
-        conversations.sort(key=lambda c: c.updated_at, reverse=True)
+        # Sort by last message timestamp (or created_at if no messages), newest first
+        def get_sort_time(conv: Conversation) -> str:
+            if conv.messages:
+                return conv.messages[-1].timestamp
+            return conv.created_at
+        
+        conversations.sort(key=get_sort_time, reverse=True)
         return conversations
 
     def list_summaries(self) -> list[dict]:

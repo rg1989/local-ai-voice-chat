@@ -1,10 +1,12 @@
-import { ConversationSummary } from '../types';
+import { ConversationSummary, MemoryUsage } from '../types';
+import { MemoryIndicator } from './MemoryIndicator';
 
 interface ChatHeaderProps {
   conversation: ConversationSummary | null;
   isConnected: boolean;
   ttsEnabled: boolean;
   onTtsToggle: () => void;
+  memoryUsage: MemoryUsage | null;
 }
 
 // Bot/AI icon
@@ -35,7 +37,7 @@ function SpeakerOffIcon() {
   );
 }
 
-export function ChatHeader({ conversation, isConnected, ttsEnabled, onTtsToggle }: ChatHeaderProps) {
+export function ChatHeader({ conversation, isConnected, ttsEnabled, onTtsToggle, memoryUsage }: ChatHeaderProps) {
   return (
     <header className="bg-[#1e2227] border-b border-slate-700/50 px-6 py-4">
       <div className="flex items-center justify-between">
@@ -58,7 +60,10 @@ export function ChatHeader({ conversation, isConnected, ttsEnabled, onTtsToggle 
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-4">
+          {/* Memory Usage Indicator */}
+          <MemoryIndicator memory={memoryUsage} />
+
           {/* TTS Toggle Button */}
           <button
             onClick={onTtsToggle}
@@ -71,13 +76,6 @@ export function ChatHeader({ conversation, isConnected, ttsEnabled, onTtsToggle 
           >
             {ttsEnabled ? <SpeakerOnIcon /> : <SpeakerOffIcon />}
           </button>
-
-          {/* Message count badge */}
-          {conversation && conversation.message_count > 0 && (
-            <div className="text-xs text-slate-400 bg-slate-700/50 px-3 py-1.5 rounded-full">
-              {conversation.message_count} messages
-            </div>
-          )}
         </div>
       </div>
     </header>

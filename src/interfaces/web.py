@@ -135,6 +135,12 @@ class VoiceChatSession:
                         self.llm.history.add_user_message(msg.content)
                     elif msg.role == "assistant":
                         self.llm.history.add_assistant_message(msg.content)
+                
+                # Update token estimate based on loaded history
+                self.llm.update_token_estimate_from_history()
+        else:
+            # New conversation - reset token count
+            self.llm._last_prompt_tokens = 0
 
     def set_conversation(self, conversation_id: str) -> None:
         """Switch to a different conversation."""
@@ -147,11 +153,21 @@ class VoiceChatSession:
         if self.conversation_id and content.strip():
             conversation_storage.add_message(self.conversation_id, role, content)
 
-    async def send_status(self, status: str, data: Optional[dict] = None) -> None:
-        """Send status update to client."""
+    async def send_status(self, status: str, data: Optional[dict] = None, include_memory: bool = False) -> None:
+        """Send status update to client.
+        
+        Args:
+            status: Status string (e.g., "listening", "thinking")
+            data: Optional additional data
+            include_memory: If True, include memory usage stats
+        """
         message = {"type": "status", "status": status}
         if data:
             message["data"] = data
+        if include_memory:
+            memory = self.llm.get_memory_usage()
+            print(f"[DEBUG] Memory usage: {memory}")
+            message["memory"] = memory
         await manager.send_json(self.websocket, message)
 
     async def send_transcription(self, text: str) -> None:
@@ -300,8 +316,8 @@ class VoiceChatSession:
             
             print(f"[DEBUG] Response complete: {len(full_response)} tokens")
             
-            # Send "listening" to resume audio streaming
-            await self.send_status("listening")
+            # Send "listening" with memory usage to resume audio streaming
+            await self.send_status("listening", include_memory=True)
             
         except asyncio.CancelledError:
             print("[DEBUG] Task was cancelled")
@@ -319,6 +335,7 @@ class VoiceChatSession:
     async def synthesize_and_send(self, text: str) -> None:
         """Synthesize text and send audio to client."""
         if not self._tts_enabled:
+            print(f"[DEBUG] TTS disabled, skipping synthesis for: {text[:50]}...")
             return  # Skip TTS when disabled
         await self.send_status("speaking")
         segment = await self.tts.synthesize_async(text)
@@ -371,8 +388,8 @@ class VoiceChatSession:
             full_response_text = "".join(full_response)
             self._save_message("assistant", full_response_text)
             
-            # Send "listening" to resume audio streaming
-            await self.send_status("listening")
+            # Send "listening" with memory usage to resume audio streaming
+            await self.send_status("listening", include_memory=True)
             
         except asyncio.CancelledError:
             # Task was cancelled
@@ -383,7 +400,7 @@ class VoiceChatSession:
                 self.websocket,
                 {"type": "error", "message": f"LLM error: {str(e)}"}
             )
-            await self.send_status("listening")
+            await self.send_status("listening", include_memory=True)
 
     def request_cancel(self) -> None:
         """Request cancellation of current processing."""
@@ -412,7 +429,9 @@ async def websocket_chat(websocket: WebSocket):
     session = VoiceChatSession(websocket)
 
     try:
-        await session.send_status("ready")
+        # Fetch context window from Ollama for memory tracking
+        await session.llm.fetch_context_window()
+        await session.send_status("ready", include_memory=True)
 
         while True:
             # Receive message
@@ -459,16 +478,19 @@ async def websocket_chat(websocket: WebSocket):
                     model = data.get("model")
                     if model:
                         session.llm.model_name = model
-                        await session.send_status("model_changed", {"model": model})
+                        # Fetch new model's context window
+                        await session.llm.fetch_context_window()
+                        await session.send_status("model_changed", {"model": model}, include_memory=True)
 
                 elif msg_type == "set_conversation":
                     conversation_id = data.get("conversation_id")
                     if conversation_id:
                         session.set_conversation(conversation_id)
-                        await session.send_status("conversation_changed", {"conversation_id": conversation_id})
+                        await session.send_status("conversation_changed", {"conversation_id": conversation_id}, include_memory=True)
 
                 elif msg_type == "set_tts_enabled":
                     enabled = data.get("enabled", True)
+                    print(f"[DEBUG] TTS enabled set to: {enabled}")
                     session._tts_enabled = enabled
                     await session.send_status("tts_enabled_changed", {"enabled": enabled})
 

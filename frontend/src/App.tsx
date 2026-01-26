@@ -8,7 +8,7 @@ import { GlobalSettingsModal } from './components/GlobalSettingsModal';
 import { useWebSocket } from './hooks/useWebSocket';
 import { useAudioStream } from './hooks/useAudioStream';
 import { useConversations } from './hooks/useConversations';
-import { AppState, Message, WSMessage, ConversationSummary, MemoryUsage, ToolInfo } from './types';
+import { AppState, Message, WSMessage, ConversationSummary, MemoryUsage, ToolInfo, WakeWordSettings } from './types';
 import { generateId } from './utils/audioUtils';
 
 // Voice mapping for display
@@ -85,6 +85,41 @@ function App() {
   const [globalRules, setGlobalRules] = useState(() => {
     return localStorage.getItem('globalRules') || '';
   });
+  
+  // Wake word settings - initialize from localStorage
+  const [wakeWordSettings, setWakeWordSettings] = useState<WakeWordSettings>(() => {
+    const saved = localStorage.getItem('wakeWordSettings');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        return {
+          enabled: parsed.enabled ?? false,
+          model: parsed.model ?? 'hey_jarvis',
+          threshold: parsed.threshold ?? 0.5,
+          timeoutSeconds: parsed.timeoutSeconds ?? 10,
+          availableModels: {},
+          ready: false, // Always start as not ready until backend confirms
+        };
+      } catch (e) {
+        console.error('Failed to parse saved wake word settings:', e);
+      }
+    }
+    return {
+      enabled: false,
+      model: 'hey_jarvis',
+      threshold: 0.5,
+      timeoutSeconds: 10,
+      availableModels: {},
+      ready: false,
+    };
+  });
+  const [wakeWordStatus, setWakeWordStatus] = useState<{
+    state: 'listening' | 'active' | 'disabled';
+    displayName: string;
+  } | null>(null);
+  
+  // Track if listening was auto-started by wake word mode
+  const wakeWordAutoListeningRef = useRef(false);
 
   const currentUserMessageRef = useRef<string>('');
   const isListeningRef = useRef(false);
@@ -97,11 +132,64 @@ function App() {
     streamingContentRef.current = streamingContent;
   }, [streamingContent]);
 
+  // Ref to hold playAudio function to avoid circular dependency
+  const playAudioRef = useRef<((audio: string, sampleRate: number) => void) | null>(null);
+
   // Handle WebSocket messages
   const handleMessage = useCallback((message: WSMessage) => {
     switch (message.type) {
       case 'status':
-        handleStatusUpdate(message.status);
+        // Inline status update logic to avoid forward reference
+        switch (message.status) {
+          case 'ready':
+          case 'listening':
+            if (isListeningRef.current) {
+              setState(AppState.LISTENING);
+            } else {
+              setState(AppState.IDLE);
+            }
+            // Safeguard: If in wake word mode and receiving 'listening' status,
+            // ensure wake word status is also reset to 'listening'
+            if (wakeWordAutoListeningRef.current) {
+              setWakeWordStatus(prev => {
+                // Only update if currently active (to reset after response)
+                if (prev?.state === 'active') {
+                  console.log('[WakeWord] Safeguard: resetting status to listening');
+                  return { ...prev, state: 'listening' };
+                }
+                return prev;
+              });
+            }
+            break;
+          case 'transcribing':
+            setState(AppState.TRANSCRIBING);
+            break;
+          case 'thinking':
+            setState(AppState.THINKING);
+            break;
+          case 'speaking':
+            setState(AppState.SPEAKING);
+            break;
+          case 'stopped':
+            // Clear streaming content on stop
+            if (streamingContentRef.current) {
+              setMessages((prev) => [
+                ...prev,
+                {
+                  id: generateId(),
+                  role: 'assistant',
+                  content: streamingContentRef.current + ' [stopped]',
+                  timestamp: new Date(),
+                },
+              ]);
+              setStreamingContent('');
+            }
+            break;
+          case 'history_cleared':
+            setMessages([]);
+            setStreamingContent('');
+            break;
+        }
         // Update memory usage if included in status message
         if (message.memory) {
           console.log('[Memory] Received:', message.memory);
@@ -144,56 +232,34 @@ function App() {
         setStreamingContent('');
         break;
       case 'audio':
-        playAudio(message.audio, message.sample_rate);
+        // Use ref to avoid circular dependency
+        playAudioRef.current?.(message.audio, message.sample_rate);
         break;
       case 'tools_list':
         setAvailableTools(message.tools);
         break;
-    }
-  }, []);
-
-  const handleStatusUpdate = useCallback((status: string) => {
-    switch (status) {
-      case 'ready':
-      case 'listening':
-        if (isListeningRef.current) {
-          setState(AppState.LISTENING);
-        } else {
-          setState(AppState.IDLE);
-        }
+      case 'wakeword_settings':
+        console.log('[WakeWord] Received settings:', message);
+        setWakeWordSettings({
+          enabled: message.enabled,
+          model: message.model,
+          threshold: message.threshold,
+          timeoutSeconds: message.timeoutSeconds,
+          availableModels: message.availableModels,
+          ready: message.ready ?? false,
+        });
         break;
-      case 'transcribing':
-        setState(AppState.TRANSCRIBING);
-        break;
-      case 'thinking':
-        setState(AppState.THINKING);
-        break;
-      case 'speaking':
-        setState(AppState.SPEAKING);
-        break;
-      case 'stopped':
-        // Clear streaming content on stop
-        if (streamingContentRef.current) {
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: generateId(),
-              role: 'assistant',
-              content: streamingContentRef.current + ' [stopped]',
-              timestamp: new Date(),
-            },
-          ]);
-          setStreamingContent('');
-        }
-        break;
-      case 'history_cleared':
-        setMessages([]);
-        setStreamingContent('');
+      case 'wake_status':
+        console.log('[WakeWord] Status update:', message.state, message.displayName);
+        setWakeWordStatus({
+          state: message.state,
+          displayName: message.displayName,
+        });
         break;
     }
   }, []);
 
-  const { isConnected, sendBinary, sendTextMessage, sendStop, sendClearHistory, sendSetVoice, sendSetModel, sendSetConversation, sendSetTtsEnabled, sendSetCustomRules, sendGetTools, sendSetToolEnabled, sendSetGlobalRules } =
+  const { isConnected, sendBinary, sendTextMessage, sendStop, sendClearHistory, sendSetVoice, sendSetModel, sendSetConversation, sendSetTtsEnabled, sendSetCustomRules, sendGetTools, sendSetToolEnabled, sendSetGlobalRules, sendSetWakeWordSettings } =
     useWebSocket({
       onMessage: handleMessage,
     });
@@ -211,10 +277,16 @@ function App() {
     onAudioChunk: handleAudioChunk,
   });
 
+  // Keep playAudioRef in sync with playAudio function
+  useEffect(() => {
+    playAudioRef.current = playAudio;
+  }, [playAudio]);
+
   // Stop listening when transcription starts (recording phase is over)
   // This closes the recording overlay automatically
+  // But NOT in wake word mode - mic stays on
   useEffect(() => {
-    if (state === AppState.TRANSCRIBING && isListeningRef.current) {
+    if (state === AppState.TRANSCRIBING && isListeningRef.current && !wakeWordAutoListeningRef.current) {
       isListeningRef.current = false;
       setIsListening(false);
       stopListening();
@@ -237,21 +309,6 @@ function App() {
     }
     previousMessageCountRef.current = messages.length;
   }, [messages, activeConversationId, updateConversationMessages, refetchConversation]);
-
-  // Initialize: Select or create a conversation when app loads
-  useEffect(() => {
-    if (!isLoadingConversations && !hasInitializedConversation.current) {
-      hasInitializedConversation.current = true;
-      
-      if (conversations.length > 0) {
-        // Select the most recent conversation
-        handleSelectConversation(conversations[0].id);
-      } else {
-        // Create a new conversation
-        handleNewConversation();
-      }
-    }
-  }, [isLoadingConversations, conversations]);
 
   // Fetch available models and check Ollama status
   useEffect(() => {
@@ -356,6 +413,23 @@ function App() {
           }
         }
         
+        // Restore wake word settings from localStorage
+        const savedWakeWord = localStorage.getItem('wakeWordSettings');
+        if (savedWakeWord) {
+          try {
+            const wakeWordParsed = JSON.parse(savedWakeWord);
+            // Send saved wake word settings to backend
+            sendSetWakeWordSettings({
+              enabled: wakeWordParsed.enabled ?? false,
+              model: wakeWordParsed.model ?? 'hey_jarvis',
+              threshold: wakeWordParsed.threshold ?? 0.5,
+              timeoutSeconds: wakeWordParsed.timeoutSeconds ?? 10,
+            });
+          } catch (e) {
+            console.error('Failed to parse saved wake word settings:', e);
+          }
+        }
+        
         // IMPORTANT: Also set the active conversation so messages are saved
         if (activeConversationId) {
           sendSetConversation(activeConversationId);
@@ -370,6 +444,36 @@ function App() {
   useEffect(() => {
     return () => cleanup();
   }, [cleanup]);
+
+  // Auto-start/stop listening when wake word mode changes
+  // Only start when BOTH enabled AND ready (model loaded on backend)
+  useEffect(() => {
+    const wakeWordReady = wakeWordSettings.enabled && wakeWordSettings.ready !== false;
+    
+    if (wakeWordReady && isConnected && ollamaStatus.available) {
+      // Wake word enabled and ready - auto-start listening if not already
+      if (!isListeningRef.current) {
+        console.log('[WakeWord] Starting auto-listen (ready:', wakeWordSettings.ready, ')');
+        startListening().then(success => {
+          if (success) {
+            wakeWordAutoListeningRef.current = true;
+            isListeningRef.current = true;
+            setIsListening(true);
+            setState(AppState.LISTENING);
+            console.log('[WakeWord] Auto-started listening');
+          }
+        });
+      }
+    } else if (!wakeWordSettings.enabled && wakeWordAutoListeningRef.current) {
+      // Wake word disabled - stop auto-listening
+      wakeWordAutoListeningRef.current = false;
+      isListeningRef.current = false;
+      setIsListening(false);
+      stopListening();
+      setState(AppState.IDLE);
+      console.log('[WakeWord] Auto-stopped listening');
+    }
+  }, [wakeWordSettings.enabled, wakeWordSettings.ready, isConnected, ollamaStatus.available, startListening, stopListening]);
 
   const handleSelectConversation = useCallback(async (id: string) => {
     const loadedMessages = await selectConversation(id);
@@ -397,6 +501,21 @@ function App() {
       }
     }
   }, [createConversation, isConnected, sendSetConversation, sendClearHistory]);
+
+  // Initialize: Select or create a conversation when app loads
+  useEffect(() => {
+    if (!isLoadingConversations && !hasInitializedConversation.current) {
+      hasInitializedConversation.current = true;
+      
+      if (conversations.length > 0) {
+        // Select the most recent conversation
+        handleSelectConversation(conversations[0].id);
+      } else {
+        // Create a new conversation
+        handleNewConversation();
+      }
+    }
+  }, [isLoadingConversations, conversations, handleSelectConversation, handleNewConversation]);
 
   const handleDeleteConversation = useCallback(async (id: string) => {
     const success = await deleteConversation(id);
@@ -466,20 +585,32 @@ function App() {
     setGlobalSettingsOpen(false);
   }, []);
 
-  const handleToolToggle = useCallback((toolName: string, enabled: boolean) => {
-    // Update local state immediately for responsive UI
-    setAvailableTools(prev => 
-      prev.map(tool => 
-        tool.name === toolName ? { ...tool, enabled } : tool
-      )
-    );
-    
-    // Send to backend
+  const handleSaveGlobalSettings = useCallback((settings: {
+    tools: Record<string, boolean>;
+    globalRules: string;
+    wakeWord: WakeWordSettings;
+  }) => {
+    // Save global rules
+    setGlobalRules(settings.globalRules);
+    localStorage.setItem('globalRules', settings.globalRules);
     if (isConnected) {
-      sendSetToolEnabled(toolName, enabled);
+      sendSetGlobalRules(settings.globalRules);
     }
     
-    // Persist to localStorage
+    // Save tool states
+    Object.entries(settings.tools).forEach(([toolName, enabled]) => {
+      // Update local state
+      setAvailableTools(prev => 
+        prev.map(tool => 
+          tool.name === toolName ? { ...tool, enabled } : tool
+        )
+      );
+      // Send to backend
+      if (isConnected) {
+        sendSetToolEnabled(toolName, enabled);
+      }
+    });
+    // Persist tool states to localStorage
     const savedToolStates = localStorage.getItem('toolStates');
     let toolStates: Record<string, boolean> = {};
     if (savedToolStates) {
@@ -489,27 +620,25 @@ function App() {
         console.error('Failed to parse saved tool states:', e);
       }
     }
-    toolStates[toolName] = enabled;
+    Object.assign(toolStates, settings.tools);
     localStorage.setItem('toolStates', JSON.stringify(toolStates));
     
-    setToast({ 
-      message: `Tool "${toolName}" ${enabled ? 'enabled' : 'disabled'}`, 
-      type: 'success' 
-    });
-    setTimeout(() => setToast(null), 3000);
-  }, [isConnected, sendSetToolEnabled]);
-
-  const handleSaveGlobalRules = useCallback((rules: string) => {
-    setGlobalRules(rules);
-    localStorage.setItem('globalRules', rules);
-    
+    // Save wake word settings
+    setWakeWordSettings(prev => ({ ...prev, ...settings.wakeWord }));
+    // Persist to localStorage
+    localStorage.setItem('wakeWordSettings', JSON.stringify({
+      enabled: settings.wakeWord.enabled,
+      model: settings.wakeWord.model,
+      threshold: settings.wakeWord.threshold,
+      timeoutSeconds: settings.wakeWord.timeoutSeconds,
+    }));
     if (isConnected) {
-      sendSetGlobalRules(rules);
+      sendSetWakeWordSettings(settings.wakeWord);
     }
     
-    setToast({ message: 'Global rules saved', type: 'success' });
+    setToast({ message: 'Settings saved', type: 'success' });
     setTimeout(() => setToast(null), 3000);
-  }, [isConnected, sendSetGlobalRules]);
+  }, [isConnected, sendSetGlobalRules, sendSetToolEnabled, sendSetWakeWordSettings]);
 
   const handleToggleListening = useCallback(async () => {
     if (!ollamaStatus.available) return;
@@ -607,6 +736,26 @@ function App() {
     setTimeout(() => setToast(null), 3000);
   }, [ttsEnabled, sendSetTtsEnabled]);
 
+  // Handler to disable wake word from header
+  const handleDisableWakeWord = useCallback(() => {
+    setWakeWordSettings(prev => {
+      const updated = { ...prev, enabled: false };
+      // Persist to localStorage
+      localStorage.setItem('wakeWordSettings', JSON.stringify({
+        enabled: false,
+        model: updated.model,
+        threshold: updated.threshold,
+        timeoutSeconds: updated.timeoutSeconds,
+      }));
+      return updated;
+    });
+    if (isConnected) {
+      sendSetWakeWordSettings({ enabled: false });
+    }
+    setToast({ message: 'Wake word disabled', type: 'success' });
+    setTimeout(() => setToast(null), 3000);
+  }, [isConnected, sendSetWakeWordSettings]);
+
   const isDisabled = !ollamaStatus.available;
 
   // Get current conversation summary
@@ -650,9 +799,9 @@ function App() {
         isOpen={globalSettingsOpen}
         onClose={handleCloseGlobalSettings}
         tools={availableTools}
-        onToolToggle={handleToolToggle}
         globalRules={globalRules}
-        onSaveGlobalRules={handleSaveGlobalRules}
+        wakeWordSettings={wakeWordSettings}
+        onSaveSettings={handleSaveGlobalSettings}
       />
 
       {/* Main Chat Area */}
@@ -663,6 +812,9 @@ function App() {
           ttsEnabled={ttsEnabled}
           onTtsToggle={handleTtsToggle}
           memoryUsage={memoryUsage}
+          wakeWordEnabled={wakeWordSettings.enabled}
+          wakeWordStatus={wakeWordStatus}
+          onDisableWakeWord={handleDisableWakeWord}
         />
 
         {/* Ollama error banner */}
@@ -722,6 +874,8 @@ function App() {
           onClearChat={handleClearChat}
           isDisabled={isDisabled}
           state={state}
+          wakeWordEnabled={wakeWordSettings.enabled}
+          wakeWordStatus={wakeWordStatus}
         />
 
         <ControlBar
@@ -731,6 +885,8 @@ function App() {
           onToggleListening={handleToggleListening}
           onSendText={handleSendText}
           onStop={handleStop}
+          wakeWordEnabled={wakeWordSettings.enabled}
+          wakeWordStatus={wakeWordStatus}
         />
       </main>
     </div>

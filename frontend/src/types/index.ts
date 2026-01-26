@@ -62,6 +62,16 @@ export interface GlobalSettings {
   globalRules: string;
 }
 
+// Wake word settings
+export interface WakeWordSettings {
+  enabled: boolean;
+  model: string;
+  threshold: number;
+  timeoutSeconds: number;
+  availableModels?: Record<string, string>; // model_id -> display_name
+  ready?: boolean; // True when backend model is loaded and ready
+}
+
 // Memory usage tracking
 export interface MemoryUsage {
   used_tokens: number;
@@ -103,10 +113,29 @@ export interface WSToolsListMessage {
   tools: ToolInfo[];
 }
 
+export interface WSWakeWordSettingsMessage {
+  type: 'wakeword_settings';
+  enabled: boolean;
+  model: string;
+  threshold: number;
+  timeoutSeconds: number;
+  availableModels: Record<string, string>;
+  ready?: boolean;
+}
+
+export interface WSWakeStatusMessage {
+  type: 'wake_status';
+  state: 'listening' | 'active' | 'disabled';
+  model: string;
+  displayName: string;
+}
+
 export type WSMessage =
   | WSStatusMessage
   | WSTranscriptionMessage
   | WSResponseTokenMessage
   | WSResponseEndMessage
   | WSAudioMessage
-  | WSToolsListMessage;
+  | WSToolsListMessage
+  | WSWakeWordSettingsMessage
+  | WSWakeStatusMessage;

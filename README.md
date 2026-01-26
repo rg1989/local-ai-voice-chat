@@ -18,6 +18,10 @@
   <img src="assets/screenshot.png" alt="Local Voice Chatbot Screenshot" width="800">
 </p>
 
+<p align="center">
+  <img src="assets/screenshot-settings.png" alt="Wake Word and Tools Settings" width="600">
+</p>
+
 ---
 
 ## Overview
@@ -29,6 +33,7 @@ Local Voice Chatbot is a fully offline voice assistant that runs entirely on you
 - **MLX Whisper** — Fast speech-to-text optimized for Apple Silicon
 - **Kokoro** — Natural text-to-speech with multiple voice options
 - **Silero VAD** — Accurate voice activity detection
+- **OpenWakeWord** — Hands-free activation with wake word detection
 
 > **No cloud services. No API keys. Complete privacy.**
 
@@ -39,6 +44,7 @@ Local Voice Chatbot is a fully offline voice assistant that runs entirely on you
 | Feature | Description |
 |---------|-------------|
 | **Sub-second Latency** | Streaming architecture enables natural, real-time conversations |
+| **Wake Word Detection** | Hands-free activation with "Hey Jarvis" and other wake words |
 | **Voice & Text Modes** | Use microphone input or type your messages |
 | **Voice Response Toggle** | Enable or disable AI voice responses on the fly |
 | **Multiple Conversations** | Create, rename, and manage separate chat sessions |
@@ -350,6 +356,27 @@ cp .env.example .env
 | `VAD_MIN_SILENCE_DURATION_MS` | `500` | Silence before end of speech |
 | `VAD_SPEECH_PAD_MS` | `30` | Padding around speech |
 
+### Wake Word Detection
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `WAKEWORD_ENABLED` | `false` | Enable/disable wake word detection |
+| `WAKEWORD_MODEL` | `hey_jarvis` | Wake word model to use |
+| `WAKEWORD_THRESHOLD` | `0.5` | Detection confidence threshold (0-1) |
+| `WAKEWORD_TIMEOUT_SECONDS` | `10` | Seconds to stay active after wake word |
+| `WAKEWORD_DEBOUNCE_MS` | `1000` | Debounce time before re-trigger |
+
+### Available Wake Words
+
+| Model Name | Activation Phrase |
+|------------|-------------------|
+| `hey_jarvis` | "Hey Jarvis" |
+| `alexa` | "Alexa" |
+| `hey_mycroft` | "Hey Mycroft" |
+| `hey_rhasspy` | "Hey Rhasspy" |
+
+> **Tip:** Wake word detection is disabled by default. Enable it in the Settings modal or via environment variables. When enabled, the assistant will only listen after hearing the wake word, then automatically return to listening mode after a timeout period.
+
 ### Alternative Models
 
 For systems with limited RAM:
@@ -367,32 +394,35 @@ LLM_MODEL_NAME=llama3.2:3b
 ## Architecture
 
 ```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│ Microphone  │────▶│  Silero VAD │────▶│ MLX Whisper │
-└─────────────┘     └─────────────┘     └─────────────┘
-                                               │
-                                               ▼
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│   Speaker   │◀────│   Kokoro    │◀────│  Qwen3-8B   │
-└─────────────┘     │    TTS      │     │ via Ollama  │
-                    └─────────────┘     └─────────────┘
-                           ▲
-                           │
                     ┌─────────────┐
-                    │ Sentencizer │
-                    │ (streaming) │
-                    └─────────────┘
+                    │ OpenWake-   │ (optional)
+┌─────────────┐     │   Word      │     ┌─────────────┐     ┌─────────────┐
+│ Microphone  │────▶│ "Hey Jarvis"│────▶│  Silero VAD │────▶│ MLX Whisper │
+└─────────────┘     └─────────────┘     └─────────────┘     └─────────────┘
+                                                                   │
+                                                                   ▼
+                    ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+                    │   Speaker   │◀────│   Kokoro    │◀────│  Qwen3-8B   │
+                    └─────────────┘     │    TTS      │     │ via Ollama  │
+                                        └─────────────┘     └─────────────┘
+                                               ▲
+                                               │
+                                        ┌─────────────┐
+                                        │ Sentencizer │
+                                        │ (streaming) │
+                                        └─────────────┘
 ```
 
 ### Streaming Pipeline
 
 The key to achieving low latency is streaming at every stage:
 
-1. **VAD** — Detects when you start and stop speaking
-2. **STT** — Transcribes speech as audio arrives
-3. **LLM** — Streams tokens as they're generated
-4. **Sentencizer** — Buffers tokens until a sentence is complete
-5. **TTS** — Speaks each sentence while LLM continues generating
+1. **Wake Word** — (Optional) Waits for activation phrase like "Hey Jarvis"
+2. **VAD** — Detects when you start and stop speaking
+3. **STT** — Transcribes speech as audio arrives
+4. **LLM** — Streams tokens as they're generated
+5. **Sentencizer** — Buffers tokens until a sentence is complete
+6. **TTS** — Speaks each sentence while LLM continues generating
 
 > This architecture allows the assistant to start speaking before it finishes thinking, creating a natural conversational flow.
 
@@ -406,6 +436,7 @@ local-voice-chatbot/
 │   ├── main.py               # Application entry point
 │   ├── config.py             # Settings and configuration
 │   ├── pipeline/
+│   │   ├── wakeword.py       # Wake word detection (OpenWakeWord)
 │   │   ├── vad.py            # Voice activity detection
 │   │   ├── stt.py            # Speech-to-text (Whisper)
 │   │   ├── llm.py            # LLM client (Ollama)
@@ -588,6 +619,7 @@ This project builds on these amazing open-source projects:
 - [MLX](https://github.com/ml-explore/mlx) — Apple Silicon optimization
 - [Kokoro](https://github.com/hexgrad/kokoro) — High-quality TTS
 - [Silero VAD](https://github.com/snakers4/silero-vad) — Voice activity detection
+- [OpenWakeWord](https://github.com/dscripka/openWakeWord) — Wake word detection
 - [Faster Whisper](https://github.com/SYSTRAN/faster-whisper) — Efficient speech recognition
 
 ---

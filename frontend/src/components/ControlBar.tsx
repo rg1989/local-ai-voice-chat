@@ -1,6 +1,11 @@
 import { AppState } from '../types';
 import { InputBar } from './InputBar';
 
+interface WakeWordStatus {
+  state: 'listening' | 'active' | 'disabled';
+  displayName: string;
+}
+
 interface ControlBarProps {
   state: AppState;
   isListening: boolean;
@@ -8,6 +13,8 @@ interface ControlBarProps {
   onToggleListening: () => void;
   onSendText: (text: string) => void;
   onStop: () => void;
+  wakeWordEnabled?: boolean;
+  wakeWordStatus?: WakeWordStatus | null;
 }
 
 export function ControlBar({
@@ -17,6 +24,8 @@ export function ControlBar({
   onToggleListening,
   onSendText,
   onStop,
+  wakeWordEnabled = false,
+  wakeWordStatus = null,
 }: ControlBarProps) {
   const isProcessing = [
     AppState.TRANSCRIBING,
@@ -29,6 +38,35 @@ export function ControlBar({
   return (
     <div className="border-t border-slate-700/50 px-6 py-3 bg-[#1e2227]">
       <div className="max-w-3xl mx-auto">
+        {/* Wake word status indicator */}
+        {wakeWordEnabled && wakeWordStatus && (
+          <div className={`mb-2 flex items-center justify-center gap-2 text-sm ${
+            wakeWordStatus.state === 'listening' 
+              ? 'text-violet-400' 
+              : wakeWordStatus.state === 'active' 
+                ? 'text-emerald-400'
+                : 'text-slate-400'
+          }`}>
+            {wakeWordStatus.state === 'listening' ? (
+              <>
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-violet-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-violet-500"></span>
+                </span>
+                <span>Say "{wakeWordStatus.displayName}" to activate...</span>
+              </>
+            ) : wakeWordStatus.state === 'active' ? (
+              <>
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+                <span>Listening...</span>
+              </>
+            ) : null}
+          </div>
+        )}
+        
         {/* Text input row - compact aligned controls */}
         <div className="flex gap-2 items-end">
           <div className="flex-1">
@@ -42,6 +80,9 @@ export function ControlBar({
               <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
               Stop
             </button>
+          ) : wakeWordEnabled ? (
+            // Wake word mode - no record button needed, mic is always on
+            null
           ) : (
             <button
               onClick={onToggleListening}

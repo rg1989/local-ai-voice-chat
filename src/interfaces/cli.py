@@ -22,6 +22,7 @@ from ..pipeline.stt import SpeechToText
 from ..pipeline.tool_parser import tool_parser
 from ..pipeline.tts import TextToSpeech
 from ..pipeline.vad import SpeechState, VoiceActivityDetector
+from ..pipeline.wakeword import WakeWordDetector, WakeWordState
 
 
 class VoiceChatCLI:
@@ -37,6 +38,7 @@ class VoiceChatCLI:
 
         # Initialize components
         self.vad = VoiceActivityDetector()
+        self.wakeword = WakeWordDetector()
         self.stt = SpeechToText()
         self.llm = LLMClient()
         self.tts = TextToSpeech()
@@ -49,6 +51,11 @@ class VoiceChatCLI:
         self._running = False
         self._processing = False
         self._current_transcription = ""
+        self._is_speaking_tts = False  # For echo cancellation
+        
+        # Register wake word callbacks
+        self.wakeword.on_wake_detected(self._on_wake_detected)
+        self.wakeword.on_timeout(self._on_wake_timeout)
         
         # Preload models for faster first response
         if preload_models:
@@ -82,9 +89,25 @@ class VoiceChatCLI:
         """Print a status message."""
         self.console.print(f"[{style}]{status}[/{style}]")
 
+    def _on_wake_detected(self) -> None:
+        """Called when wake word is detected."""
+        model_name = self.wakeword.model_name
+        display_name = WakeWordDetector.AVAILABLE_MODELS.get(model_name, model_name)
+        self._print_status(f"✨ Wake word detected: {display_name}", "bold green")
+    
+    def _on_wake_timeout(self) -> None:
+        """Called when wake word times out."""
+        if self.wakeword.enabled:
+            model_name = self.wakeword.model_name
+            display_name = WakeWordDetector.AVAILABLE_MODELS.get(model_name, model_name)
+            self._print_status(f"💤 Waiting for wake word: {display_name}...", "dim")
+
     def _on_speech_start(self) -> None:
         """Called when speech is detected."""
         self._print_status("🎤 Listening...", "green")
+        # Reset wake word timeout while speaking
+        if self.wakeword.enabled:
+            self.wakeword.reset_timeout()
 
     def _on_speech_end(self, audio: np.ndarray) -> None:
         """Called when speech ends with the audio data."""
@@ -129,6 +152,13 @@ class VoiceChatCLI:
                 self._speak_sentence(remaining)
 
             self.console.print()  # Newline after response
+            
+            # Return to wake word listening mode if enabled
+            if self.wakeword.enabled:
+                self.wakeword.set_listening()
+                model_name = self.wakeword.model_name
+                display_name = WakeWordDetector.AVAILABLE_MODELS.get(model_name, model_name)
+                self._print_status(f"💤 Waiting for wake word: {display_name}...", "dim")
 
         except Exception as e:
             self.console.print(f"\n[red]Error: {e}[/red]")
@@ -158,9 +188,18 @@ class VoiceChatCLI:
             if not sentence.strip():
                 return
             
-            audio_segment = self.tts.synthesize(sentence)
-            if len(audio_segment.audio) > 0:
-                self.audio_playback.play(audio_segment.audio, blocking=True)
+            # Echo cancellation: mute wake word detection while speaking
+            self.wakeword.set_speaking(True)
+            self._is_speaking_tts = True
+            
+            try:
+                audio_segment = self.tts.synthesize(sentence)
+                if len(audio_segment.audio) > 0:
+                    self.audio_playback.play(audio_segment.audio, blocking=True)
+            finally:
+                # Resume wake word detection after TTS
+                self.wakeword.set_speaking(False)
+                self._is_speaking_tts = False
         except Exception as e:
             self.console.print(f"\n[red]TTS Error: {e}[/red]")
 
@@ -203,7 +242,13 @@ class VoiceChatCLI:
 
         signal.signal(signal.SIGINT, signal_handler)
 
-        self._print_status("Ready! Start speaking...")
+        # Print ready status based on wake word mode
+        if self.wakeword.enabled:
+            model_name = self.wakeword.model_name
+            display_name = WakeWordDetector.AVAILABLE_MODELS.get(model_name, model_name)
+            self._print_status(f"Ready! Say '{display_name}' to activate...", "green")
+        else:
+            self._print_status("Ready! Start speaking...", "green")
         self._running = True
 
         try:
@@ -221,10 +266,18 @@ class VoiceChatCLI:
             self.llm.close()
 
     def _process_audio(self, audio_chunk: np.ndarray) -> None:
-        """Process audio through VAD."""
+        """Process audio through wake word and VAD."""
         if self._processing:
             return
 
+        # If wake word is enabled, check for wake word first
+        if self.wakeword.enabled:
+            ww_result = self.wakeword.process(audio_chunk)
+            
+            # Only process through VAD if wake word is active
+            if ww_result.state != WakeWordState.ACTIVE:
+                return  # Still waiting for wake word
+        
         self.vad.process(audio_chunk)
 
 

@@ -120,6 +120,19 @@ export function useWebSocket({ onMessage, onOpen, onClose, onError }: UseWebSock
     sendJson({ type: 'set_global_rules', rules });
   }, [sendJson]);
 
+  const sendGetWakeWordSettings = useCallback(() => {
+    sendJson({ type: 'get_wakeword_settings' });
+  }, [sendJson]);
+
+  const sendSetWakeWordSettings = useCallback((settings: {
+    enabled?: boolean;
+    model?: string;
+    threshold?: number;
+    timeoutSeconds?: number;
+  }) => {
+    sendJson({ type: 'set_wakeword_settings', ...settings });
+  }, [sendJson]);
+
   useEffect(() => {
     connect();
     return () => disconnect();
@@ -140,5 +153,7 @@ export function useWebSocket({ onMessage, onOpen, onClose, onError }: UseWebSock
     sendGetTools,
     sendSetToolEnabled,
     sendSetGlobalRules,
+    sendGetWakeWordSettings,
+    sendSetWakeWordSettings,
   };
 }

@@ -112,39 +112,9 @@ fi
 echo -e "${GREEN}  ✓ Ollama ready${NC}"
 
 # ============================================
-# Step 4: Start Backend
+# Step 4: Start Frontend (in background)
 # ============================================
-echo -e "${BLUE}[4/5]${NC} Starting backend server..."
-
-# Kill any existing process on port 8000
-lsof -ti:8000 | xargs kill -9 2>/dev/null || true
-
-# Start backend in background
-python -m src.main --web > /tmp/voice-chatbot-backend.log 2>&1 &
-BACKEND_PID=$!
-
-# Wait for backend to be ready
-echo -n "  → Waiting for backend"
-for i in {1..30}; do
-    if curl -s http://localhost:8000/api/health > /dev/null 2>&1; then
-        break
-    fi
-    echo -n "."
-    sleep 1
-done
-echo ""
-
-if curl -s http://localhost:8000/api/health > /dev/null 2>&1; then
-    echo -e "${GREEN}  ✓ Backend running on port 8000${NC}"
-else
-    echo -e "${RED}  ✗ Backend failed to start. Check /tmp/voice-chatbot-backend.log${NC}"
-    exit 1
-fi
-
-# ============================================
-# Step 5: Start Frontend
-# ============================================
-echo -e "${BLUE}[5/5]${NC} Starting frontend server..."
+echo -e "${BLUE}[4/5]${NC} Starting frontend server..."
 
 # Kill any existing process on port 5173
 lsof -ti:5173 | xargs kill -9 2>/dev/null || true
@@ -173,6 +143,14 @@ else
 fi
 
 # ============================================
+# Step 5: Start Backend (with live logs)
+# ============================================
+echo -e "${BLUE}[5/5]${NC} Starting backend server..."
+
+# Kill any existing process on port 8000
+lsof -ti:8000 | xargs kill -9 2>/dev/null || true
+
+# ============================================
 # Ready!
 # ============================================
 echo ""
@@ -186,6 +164,10 @@ echo -e "    ${GREEN}➜  http://localhost:5173${NC}"
 echo ""
 echo -e "  ${YELLOW}Press Ctrl+C to stop all servers${NC}"
 echo ""
+echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
+echo -e "${CYAN}                      Backend Logs                              ${NC}"
+echo -e "${CYAN}═══════════════════════════════════════════════════════════════${NC}"
+echo ""
 
-# Keep script running and wait for interrupt
-wait $FRONTEND_PID
+# Run backend in foreground so logs are visible
+python -m src.main --web

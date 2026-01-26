@@ -4,6 +4,11 @@ import { ChatMessage } from './ChatMessage';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { formatTime } from '../utils/audioUtils';
 
+interface WakeWordStatus {
+  state: 'listening' | 'active' | 'disabled';
+  displayName: string;
+}
+
 interface ChatMessagesProps {
   messages: Message[];
   streamingContent: string;
@@ -12,6 +17,8 @@ interface ChatMessagesProps {
   onClearChat: () => void;
   isDisabled: boolean;
   state: AppState;
+  wakeWordEnabled?: boolean;
+  wakeWordStatus?: WakeWordStatus | null;
 }
 
 // Microphone icon
@@ -204,6 +211,8 @@ export const ChatMessages = memo(function ChatMessages({
   onClearChat,
   isDisabled,
   state,
+  wakeWordEnabled = false,
+  wakeWordStatus = null,
 }: ChatMessagesProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [copied, setCopied] = useState(false);
@@ -259,10 +268,21 @@ export const ChatMessages = memo(function ChatMessages({
     URL.revokeObjectURL(url);
   }, [formatMessagesForExport]);
 
+  // Determine if we should show the recording overlay
+  // Rules:
+  // 1. Must be actively listening (isListening = true)
+  // 2. In wake word mode: only show when wake word is detected (state === 'active')
+  //    Never show during "listening" state (waiting for wake word) or when status is unknown
+  // 3. In manual mode (no wake word): show whenever isListening is true
+  // 4. Hide overlay once transcription starts (processing begins)
+  const isProcessing = state === AppState.TRANSCRIBING || state === AppState.THINKING || state === AppState.SPEAKING;
+  const isWakeWordWaiting = wakeWordEnabled && (wakeWordStatus === null || wakeWordStatus.state === 'listening' || wakeWordStatus.state === 'disabled');
+  const showRecordingOverlay = isListening && !isWakeWordWaiting && !isProcessing;
+
   return (
     <div className="flex-1 flex flex-col bg-[#15181c] relative overflow-hidden">
-      {/* Recording Overlay - shown when listening */}
-      {isListening && (
+      {/* Recording Overlay - shown when actively recording (not during wake word listening) */}
+      {showRecordingOverlay && (
         <div className="absolute inset-0 z-50 flex flex-col items-center justify-center bg-black/70 backdrop-blur-sm">
           {/* Pulsing microphone icon */}
           <div className="relative mb-8">
@@ -311,7 +331,8 @@ export const ChatMessages = memo(function ChatMessages({
       )}
 
       {/* Floating Messages Counter - fixed position relative to container */}
-      {messages.length > 0 && !isListening && (
+      {/* Show when there are messages and we're NOT showing the recording overlay */}
+      {messages.length > 0 && !showRecordingOverlay && (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10
                        opacity-50 hover:opacity-100 px-3 py-1.5 text-xs text-slate-400 hover:text-violet-400
                        bg-slate-800/80 hover:bg-slate-800 backdrop-blur-sm
@@ -322,8 +343,8 @@ export const ChatMessages = memo(function ChatMessages({
         </div>
       )}
 
-      {/* Floating action buttons - fixed position relative to container (hidden during recording) */}
-      {messages.length > 0 && !isListening && (
+      {/* Floating action buttons - fixed position relative to container (hidden during recording overlay) */}
+      {messages.length > 0 && !showRecordingOverlay && (
         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2">
           {/* Copy Chat button */}
           <button

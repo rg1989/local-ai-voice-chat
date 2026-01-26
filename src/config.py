@@ -106,6 +106,18 @@ class TTSSettings(BaseSettings):
     output_sample_rate: int = Field(default=24000, description="Output audio sample rate")
 
 
+class WakeWordSettings(BaseSettings):
+    """Wake word detection settings."""
+
+    model_config = SettingsConfigDict(env_prefix="WAKEWORD_")
+
+    enabled: bool = Field(default=False, description="Enable wake word detection (off by default)")
+    model: str = Field(default="hey_jarvis", description="Wake word model name")
+    threshold: float = Field(default=0.5, description="Detection confidence threshold (0-1)")
+    timeout_seconds: int = Field(default=10, description="Seconds to stay active after wake word")
+    debounce_ms: int = Field(default=1000, description="Milliseconds to wait before allowing re-trigger")
+
+
 class WebSettings(BaseSettings):
     """Web interface settings."""
 
@@ -132,6 +144,7 @@ class Settings(BaseSettings):
     tts: TTSSettings = Field(default_factory=TTSSettings)
     web: WebSettings = Field(default_factory=WebSettings)
     tools: ToolSettings = Field(default_factory=ToolSettings)
+    wakeword: WakeWordSettings = Field(default_factory=WakeWordSettings)
 
     # Paths
     models_dir: Path = Field(

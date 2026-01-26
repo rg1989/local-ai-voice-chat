@@ -69,7 +69,7 @@ class TextToSpeech:
             # Initialize Kokoro pipeline
             # Use 'a' for American English, 'b' for British English
             lang_code = 'a' if self.voice.startswith('a') else 'b'
-            self._pipeline = KPipeline(lang_code=lang_code)
+            self._pipeline = KPipeline(lang_code=lang_code, repo_id='hexgrad/Kokoro-82M')
             self._loaded = True
             print(f"Loaded Kokoro TTS with voice: {self.voice}")
 

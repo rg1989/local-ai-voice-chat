@@ -7,6 +7,7 @@ from .tts import TextToSpeech
 from .sentencizer import StreamingSentencizer
 from .tools import tool_registry, ToolRegistry, ToolResult, generate_tool_prompt
 from .tool_parser import tool_parser, ToolCallParser, ParsedToolCall
+from .wakeword import WakeWordDetector, WakeWordState, WakeWordResult
 
 __all__ = [
     "VoiceActivityDetector",
@@ -21,4 +22,7 @@ __all__ = [
     "tool_parser",
     "ToolCallParser",
     "ParsedToolCall",
+    "WakeWordDetector",
+    "WakeWordState",
+    "WakeWordResult",
 ]

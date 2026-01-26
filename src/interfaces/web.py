@@ -22,6 +22,7 @@ from ..pipeline.sentencizer import StreamingSentencizer
 from ..pipeline.stt import SpeechToText
 from ..pipeline.tts import TextToSpeech
 from ..pipeline.vad import SpeechState, VoiceActivityDetector
+from ..pipeline.wakeword import WakeWordDetector, WakeWordState
 
 # Create FastAPI app
 app = FastAPI(
@@ -33,11 +34,24 @@ app = FastAPI(
 
 @app.on_event("startup")
 async def startup_event():
-    """Preload models on server startup."""
-    print("Server starting - preloading models...")
-    # Run in thread pool to not block startup
+    """Preload and warm up models on server startup."""
+    print("\n" + "=" * 60)
+    print("  Model Warmup - Preparing for fast first response")
+    print("=" * 60)
+    
+    total_start = time.time()
+    
+    # Run STT and TTS warmups in thread pool (synchronous operations)
     loop = asyncio.get_event_loop()
     await loop.run_in_executor(None, VoiceChatSession.preload_models)
+    
+    # Warm up Ollama LLM (async operation)
+    await VoiceChatSession.warmup_llm()
+    
+    total_time = time.time() - total_start
+    print("=" * 60)
+    print(f"  All models warmed up! Total time: {total_time:.1f}s")
+    print("=" * 60 + "\n")
 
 
 class ConnectionManager:
@@ -84,22 +98,94 @@ class VoiceChatSession:
 
     @classmethod
     def preload_models(cls) -> None:
-        """Preload STT and TTS models for faster first response."""
+        """Preload and warm up STT and TTS models for faster first response.
+        
+        This runs actual inference to ensure models are fully loaded and
+        compiled (especially important for MLX which compiles on first use).
+        """
+        import time as _time
+        
+        # Warm up STT (MLX Whisper)
         if cls._shared_stt is None:
-            print("Preloading Whisper STT model...")
+            print("  [1/3] Warming up Whisper STT...", end=" ", flush=True)
+            start = _time.time()
             cls._shared_stt = SpeechToText()
             cls._shared_stt._ensure_loaded()
+            
+            # Run actual inference with dummy audio to compile MLX graphs
+            # Generate 0.5s of silence at 16kHz
+            dummy_audio = np.zeros(8000, dtype=np.float32)
+            try:
+                cls._shared_stt.transcribe(dummy_audio, sample_rate=16000)
+            except Exception as e:
+                print(f"(warmup transcription failed: {e})", end=" ")
+            
+            elapsed = _time.time() - start
+            print(f"done ({elapsed:.1f}s)")
         
+        # Warm up TTS (Kokoro)
         if cls._shared_tts is None:
-            print("Preloading Kokoro TTS model...")
-            cls._shared_tts = TextToSpeech()
-            cls._shared_tts._ensure_loaded()
+            print("  [2/3] Warming up Kokoro TTS...", end=" ", flush=True)
+            start = _time.time()
+            
+            # Suppress PyTorch warnings during Kokoro initialization
+            # (LSTM dropout warning, weight_norm deprecation warning)
+            import warnings
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", category=UserWarning, module="torch")
+                warnings.filterwarnings("ignore", category=FutureWarning, module="torch")
+                
+                cls._shared_tts = TextToSpeech()
+                cls._shared_tts._ensure_loaded()
+                
+                # Run actual inference to warm up the pipeline
+                try:
+                    cls._shared_tts.synthesize("Hello")
+                except Exception as e:
+                    print(f"(warmup synthesis failed: {e})", end=" ")
+            
+            elapsed = _time.time() - start
+            print(f"done ({elapsed:.1f}s)")
+
+    @classmethod
+    async def warmup_llm(cls) -> None:
+        """Warm up Ollama LLM by sending a minimal request.
         
-        print("Models preloaded!")
+        This ensures the model is loaded into GPU VRAM before the first
+        real user query, eliminating the slow first response.
+        """
+        import time as _time
+        
+        print("  [3/3] Warming up Ollama LLM...", end=" ", flush=True)
+        start = _time.time()
+        
+        llm = LLMClient()
+        try:
+            # Send a minimal generate request to load model into VRAM
+            response = await llm._async_client.post(
+                f"{llm.base_url}/api/generate",
+                json={
+                    "model": llm.model_name,
+                    "prompt": "Hi",
+                    "stream": False,
+                    "options": {"num_predict": 1}  # Generate just 1 token
+                },
+                timeout=120.0  # Model loading can take time
+            )
+            response.raise_for_status()
+            elapsed = _time.time() - start
+            print(f"done ({elapsed:.1f}s)")
+        except Exception as e:
+            elapsed = _time.time() - start
+            print(f"failed ({elapsed:.1f}s) - {e}")
+            print("    Note: First query may be slow if Ollama model isn't loaded")
+        finally:
+            await llm.aclose()
 
     def __init__(self, websocket: WebSocket, conversation_id: Optional[str] = None):
         self.websocket = websocket
         self.vad = VoiceActivityDetector()
+        self.wakeword = WakeWordDetector()
         
         # Use shared preloaded models if available
         if VoiceChatSession._shared_stt is not None:
@@ -126,6 +212,41 @@ class VoiceChatSession:
         # Conversation persistence
         self.conversation_id = conversation_id
         self._load_conversation_history()
+        
+        # Register wake word callbacks
+        self.wakeword.on_wake_detected(self._on_wake_detected)
+        self.wakeword.on_timeout(self._on_wake_timeout)
+    
+    def _on_wake_detected(self) -> None:
+        """Called when wake word is detected."""
+        # We'll send the status update asynchronously
+        asyncio.create_task(self._send_wake_status("active"))
+    
+    def _on_wake_timeout(self) -> None:
+        """Called when wake word times out."""
+        asyncio.create_task(self._send_wake_status("listening"))
+    
+    async def _send_wake_status(self, state: str) -> None:
+        """Send wake word status to client."""
+        model_name = self.wakeword.model_name
+        display_name = WakeWordDetector.AVAILABLE_MODELS.get(model_name, model_name)
+        print(f"[WAKEWORD] Sending wake_status: state={state}, model={model_name}")
+        try:
+            success = await manager.send_json(
+                self.websocket,
+                {
+                    "type": "wake_status",
+                    "state": state,
+                    "model": model_name,
+                    "displayName": display_name,
+                }
+            )
+            if success:
+                print(f"[WAKEWORD] Successfully sent wake_status: {state}")
+            else:
+                print(f"[WAKEWORD] WARNING: Failed to send wake_status (connection closed)")
+        except Exception as e:
+            print(f"[WAKEWORD] ERROR sending wake_status: {e}")
 
     def _load_conversation_history(self) -> None:
         """Load conversation history from storage into LLM context."""
@@ -248,12 +369,35 @@ class VoiceChatSession:
         # Convert bytes to numpy array (assuming 16-bit PCM)
         audio = np.frombuffer(audio_data, dtype=np.int16).astype(np.float32) / 32768.0
 
+        # If wake word is enabled, check for wake word first
+        if self.wakeword.enabled:
+            # Debug: log that we're processing audio for wake word (only occasionally)
+            if not hasattr(self, '_ww_process_count'):
+                self._ww_process_count = 0
+            self._ww_process_count += 1
+            if self._ww_process_count % 100 == 1:
+                print(f"[WAKEWORD] Processing audio chunk #{self._ww_process_count}, audio shape: {audio.shape}, enabled: {self.wakeword.enabled}, ready: {self.wakeword.is_ready}")
+            
+            ww_result = self.wakeword.process(audio)
+            
+            # If wake word was just detected, send status
+            if ww_result.detected:
+                print(f"[WAKEWORD] Detected '{ww_result.model_name}' with confidence {ww_result.confidence:.2f}")
+                await self._send_wake_status("active")
+            
+            # Only process through VAD if wake word is active (or just detected)
+            if ww_result.state != WakeWordState.ACTIVE:
+                return  # Still waiting for wake word
+        
         # Process through VAD
         result = self.vad.process(audio)
 
         if result.state == SpeechState.SPEECH_START:
             self._is_speaking = True
             await self.send_status("listening")
+            # Reset wake word timeout while speaking
+            if self.wakeword.enabled:
+                self.wakeword.reset_timeout()
 
         elif result.state == SpeechState.SPEECH_END:
             self._is_speaking = False
@@ -262,6 +406,10 @@ class VoiceChatSession:
 
     async def process_speech_end(self) -> None:
         """Process end of speech segment."""
+        # Prevent wake word timeout during processing
+        if self.wakeword.enabled:
+            self.wakeword.set_processing(True)
+        
         # Create interaction log
         interaction_start = time.time()
         log = InteractionLog.create(input_type="voice")
@@ -412,18 +560,32 @@ class VoiceChatSession:
             log.total_duration_ms = int((time.time() - interaction_start) * 1000)
             self._save_interaction_log(log)
             
+            # If wake word is enabled, return to listening for wake word FIRST
+            # (before sending status, to avoid race condition with overlay)
+            if self.wakeword.enabled:
+                print(f"[DEBUG] Wake word enabled, resetting to listening state")
+                self.wakeword.set_processing(False)  # Allow timeout again
+                self.wakeword.set_listening()
+                await self._send_wake_status("listening")
+                print(f"[DEBUG] Wake status 'listening' sent")
+            
             # Send "listening" with memory usage to resume audio streaming
             await self.send_status("listening", include_memory=True)
+            print(f"[DEBUG] Status 'listening' sent")
             
         except asyncio.CancelledError:
             log.add_error("Task was cancelled")
             log.total_duration_ms = int((time.time() - interaction_start) * 1000)
             self._save_interaction_log(log)
+            if self.wakeword.enabled:
+                self.wakeword.set_processing(False)
             print("[DEBUG] Task was cancelled")
             return
         except Exception as e:
             log.add_error(f"Processing error: {str(e)}")
             log.total_duration_ms = int((time.time() - interaction_start) * 1000)
+            if self.wakeword.enabled:
+                self.wakeword.set_processing(False)
             self._save_interaction_log(log)
             print(f"[ERROR] Processing error: {e}")
             import traceback
@@ -460,12 +622,29 @@ class VoiceChatSession:
             return
         
         await self.send_status("speaking")
-        segment = await self.tts.synthesize_async(text)
-        if len(segment.audio) > 0:
-            await self.send_audio(segment.audio, segment.sample_rate)
+        
+        # Echo cancellation: mute wake word detection while speaking
+        self.wakeword.set_speaking(True)
+        
+        try:
+            segment = await self.tts.synthesize_async(text)
+            if len(segment.audio) > 0:
+                await self.send_audio(segment.audio, segment.sample_rate)
+                
+                # Wait for audio to finish playing on frontend before resuming wake word
+                # Add buffer time for audio transmission and playback latency
+                playback_delay = segment.duration_seconds + 0.5  # audio duration + 500ms buffer
+                await asyncio.sleep(playback_delay)
+        finally:
+            # Resume wake word detection after TTS playback completes
+            self.wakeword.set_speaking(False)
 
     async def process_text_message(self, text: str) -> None:
         """Process a text message (for text-only mode)."""
+        # Prevent wake word timeout during processing
+        if self.wakeword.enabled:
+            self.wakeword.set_processing(True)
+        
         # Create interaction log
         interaction_start = time.time()
         log = InteractionLog.create(input_type="text")
@@ -552,18 +731,29 @@ class VoiceChatSession:
             log.total_duration_ms = int((time.time() - interaction_start) * 1000)
             self._save_interaction_log(log)
             
+            # If wake word is enabled, return to listening for wake word FIRST
+            # (before sending status, to avoid race condition with overlay)
+            if self.wakeword.enabled:
+                self.wakeword.set_processing(False)  # Allow timeout again
+                self.wakeword.set_listening()
+                await self._send_wake_status("listening")
+            
             # Send "listening" with memory usage to resume audio streaming
             await self.send_status("listening", include_memory=True)
-            
+
         except asyncio.CancelledError:
             log.add_error("Task was cancelled")
             log.total_duration_ms = int((time.time() - interaction_start) * 1000)
             self._save_interaction_log(log)
+            if self.wakeword.enabled:
+                self.wakeword.set_processing(False)
             return
         except Exception as e:
             log.add_error(f"LLM error: {str(e)}")
             log.total_duration_ms = int((time.time() - interaction_start) * 1000)
             self._save_interaction_log(log)
+            if self.wakeword.enabled:
+                self.wakeword.set_processing(False)
             print(f"LLM error: {e}")
             await manager.send_json(
                 self.websocket,
@@ -679,6 +869,15 @@ async def websocket_chat(websocket: WebSocket):
         # Fetch context window from Ollama for memory tracking
         await session.llm.fetch_context_window()
         await session.send_status("ready", include_memory=True)
+        
+        # Send initial wake word settings
+        ww_settings = session.wakeword.get_settings()
+        ww_settings["availableModels"] = WakeWordDetector.get_available_models()
+        await manager.send_json(websocket, {"type": "wakeword_settings", **ww_settings})
+        
+        # Send initial wake status if enabled
+        if session.wakeword.enabled:
+            await session._send_wake_status(session.wakeword.state.value)
 
         while True:
             # Receive message
@@ -774,6 +973,45 @@ async def websocket_chat(websocket: WebSocket):
                     session.llm.set_global_rules(rules)
                     await session.send_status("global_rules_changed", {"rules": rules})
 
+                elif msg_type == "get_wakeword_settings":
+                    # Return current wake word settings
+                    ww_settings = session.wakeword.get_settings()
+                    ww_settings["availableModels"] = WakeWordDetector.get_available_models()
+                    await manager.send_json(websocket, {"type": "wakeword_settings", **ww_settings})
+
+                elif msg_type == "set_wakeword_settings":
+                    # Update wake word settings
+                    enabled = data.get("enabled")
+                    model = data.get("model")
+                    threshold = data.get("threshold")
+                    timeout = data.get("timeoutSeconds")
+                    
+                    session.wakeword.update_settings(
+                        enabled=enabled,
+                        model=model,
+                        threshold=threshold,
+                        timeout_seconds=timeout,
+                    )
+                    
+                    print(f"[DEBUG] Wake word settings updated: enabled={enabled}, model={model}, threshold={threshold}")
+                    
+                    # Pre-load the model if enabling wake word
+                    if enabled:
+                        # Run model loading in background to avoid blocking WebSocket
+                        import asyncio
+                        loop = asyncio.get_event_loop()
+                        await loop.run_in_executor(None, session.wakeword.preload_model)
+                        print(f"[DEBUG] Wake word model preloaded, ready={session.wakeword.is_ready}")
+                    
+                    # Send updated settings back (includes ready status)
+                    ww_settings = session.wakeword.get_settings()
+                    ww_settings["availableModels"] = WakeWordDetector.get_available_models()
+                    await manager.send_json(websocket, {"type": "wakeword_settings", **ww_settings})
+                    
+                    # Also send current wake status
+                    if session.wakeword.enabled:
+                        await session._send_wake_status(session.wakeword.state.value)
+
     except WebSocketDisconnect:
         pass
     except RuntimeError as e:
@@ -790,6 +1028,43 @@ async def get_voices():
     """Get available TTS voices."""
     # Return list of voice IDs for frontend compatibility
     return {"voices": list(TextToSpeech.list_voices().keys())}
+
+
+@app.get("/api/wakeword/settings")
+async def get_wakeword_settings():
+    """Get wake word settings."""
+    return {
+        "enabled": settings.wakeword.enabled,
+        "model": settings.wakeword.model,
+        "threshold": settings.wakeword.threshold,
+        "timeoutSeconds": settings.wakeword.timeout_seconds,
+        "availableModels": WakeWordDetector.get_available_models(),
+    }
+
+
+class WakeWordSettingsRequest(BaseModel):
+    """Request body for updating wake word settings."""
+    enabled: Optional[bool] = None
+    model: Optional[str] = None
+    threshold: Optional[float] = None
+    timeoutSeconds: Optional[int] = None
+
+
+@app.post("/api/wakeword/settings")
+async def update_wakeword_settings(request: WakeWordSettingsRequest):
+    """Update wake word settings.
+    
+    Note: These settings are session-based. For persistent settings,
+    use environment variables or .env file.
+    """
+    # Return the requested settings (actual update happens per-session via WebSocket)
+    return {
+        "enabled": request.enabled if request.enabled is not None else settings.wakeword.enabled,
+        "model": request.model if request.model is not None else settings.wakeword.model,
+        "threshold": request.threshold if request.threshold is not None else settings.wakeword.threshold,
+        "timeoutSeconds": request.timeoutSeconds if request.timeoutSeconds is not None else settings.wakeword.timeout_seconds,
+        "availableModels": WakeWordDetector.get_available_models(),
+    }
 
 
 @app.get("/api/health")

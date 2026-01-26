@@ -40,6 +40,9 @@ dependencies = [
     # Tool support (web content extraction)
     "trafilatura>=1.6.0",
     "beautifulsoup4>=4.12.0",
+    
+    # Wake word detection
+    "openwakeword>=0.6.0",
 ]
 
 [project.optional-dependencies]

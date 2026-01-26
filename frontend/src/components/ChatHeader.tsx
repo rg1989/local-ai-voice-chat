@@ -1,12 +1,20 @@
 import { ConversationSummary, MemoryUsage } from '../types';
 import { MemoryIndicator } from './MemoryIndicator';
 
+interface WakeWordStatus {
+  state: 'listening' | 'active' | 'disabled';
+  displayName: string;
+}
+
 interface ChatHeaderProps {
   conversation: ConversationSummary | null;
   isConnected: boolean;
   ttsEnabled: boolean;
   onTtsToggle: () => void;
   memoryUsage: MemoryUsage | null;
+  wakeWordEnabled?: boolean;
+  wakeWordStatus?: WakeWordStatus | null;
+  onDisableWakeWord?: () => void;
 }
 
 // Chat bubble icon (matches sidebar)
@@ -37,7 +45,34 @@ function SpeakerOffIcon() {
   );
 }
 
-export function ChatHeader({ conversation, isConnected, ttsEnabled, onTtsToggle, memoryUsage }: ChatHeaderProps) {
+// Microphone icon for wake word
+function MicrophoneIcon() {
+  return (
+    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+    </svg>
+  );
+}
+
+// Close/X icon
+function CloseIcon() {
+  return (
+    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+    </svg>
+  );
+}
+
+export function ChatHeader({ 
+  conversation, 
+  isConnected, 
+  ttsEnabled, 
+  onTtsToggle, 
+  memoryUsage,
+  wakeWordEnabled = false,
+  wakeWordStatus = null,
+  onDisableWakeWord,
+}: ChatHeaderProps) {
   return (
     <header className="bg-[#1e2227] border-b border-slate-700/50 px-6 py-4">
       <div className="flex items-center justify-between">
@@ -60,7 +95,47 @@ export function ChatHeader({ conversation, isConnected, ttsEnabled, onTtsToggle,
           </div>
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
+          {/* Wake Word Indicator */}
+          {wakeWordEnabled && (
+            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg ${
+              wakeWordStatus?.state === 'active' 
+                ? 'bg-emerald-600/20 text-emerald-400' 
+                : 'bg-violet-600/20 text-violet-400'
+            }`}>
+              {/* Pulsing indicator */}
+              <span className="relative flex h-2 w-2">
+                <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
+                  wakeWordStatus?.state === 'active' ? 'bg-emerald-400' : 'bg-violet-400'
+                }`}></span>
+                <span className={`relative inline-flex rounded-full h-2 w-2 ${
+                  wakeWordStatus?.state === 'active' ? 'bg-emerald-500' : 'bg-violet-500'
+                }`}></span>
+              </span>
+              
+              {/* Microphone icon */}
+              <MicrophoneIcon />
+              
+              {/* Wake word name */}
+              <span className="text-xs font-medium">
+                {wakeWordStatus?.state === 'active' 
+                  ? 'Listening...' 
+                  : wakeWordStatus?.displayName || 'Wake Word'}
+              </span>
+              
+              {/* Disable button */}
+              {onDisableWakeWord && (
+                <button
+                  onClick={onDisableWakeWord}
+                  className="ml-1 p-0.5 hover:bg-white/10 rounded transition-colors cursor-pointer"
+                  title="Disable wake word"
+                >
+                  <CloseIcon />
+                </button>
+              )}
+            </div>
+          )}
+
           {/* Memory Usage Indicator */}
           <MemoryIndicator memory={memoryUsage} />
 

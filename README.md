@@ -40,9 +40,13 @@ Local Voice Chatbot is a fully offline voice assistant that runs entirely on you
 |---------|-------------|
 | **Sub-second Latency** | Streaming architecture enables natural, real-time conversations |
 | **Voice & Text Modes** | Use microphone input or type your messages |
+| **Voice Response Toggle** | Enable or disable AI voice responses on the fly |
+| **Multiple Conversations** | Create, rename, and manage separate chat sessions |
+| **Isolated Context Per Chat** | Each conversation maintains its own memory and context |
+| **Context Window Indicator** | Real-time display of LLM memory usage with threshold warnings |
 | **Modern Web Interface** | Beautiful React-based UI with dark theme |
 | **Multiple Voices** | Choose from American and British English voices |
-| **Conversation Memory** | Maintains context throughout your chat session |
+| **Persistent Storage** | Conversations are automatically saved and restored |
 | **100% Offline** | All processing happens locally on your machine |
 
 ---

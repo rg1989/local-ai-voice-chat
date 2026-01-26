@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Message } from '../types';
+import { Message, AppState } from '../types';
 import { ChatMessage } from './ChatMessage';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { formatTime } from '../utils/audioUtils';
@@ -11,6 +11,7 @@ interface ChatMessagesProps {
   onToggleListening: () => void;
   onClearChat: () => void;
   isDisabled: boolean;
+  state: AppState;
 }
 
 // Microphone icon
@@ -52,6 +53,28 @@ function StreamingBotAvatar() {
       <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
       </svg>
+    </div>
+  );
+}
+
+// Bot avatar with thinking/loading animation
+function ThinkingBotAvatar() {
+  return (
+    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shrink-0 shadow-lg shadow-emerald-500/20 animate-pulse">
+      <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+      </svg>
+    </div>
+  );
+}
+
+// Typing dots animation
+function TypingDots() {
+  return (
+    <div className="flex items-center gap-1">
+      <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+      <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+      <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
     </div>
   );
 }
@@ -155,6 +178,7 @@ export function ChatMessages({
   onToggleListening,
   onClearChat,
   isDisabled,
+  state,
 }: ChatMessagesProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [copied, setCopied] = useState(false);
@@ -163,9 +187,13 @@ export function ChatMessages({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
+  // Scroll when messages change, streaming content changes, or state changes
   useEffect(() => {
     scrollToBottom();
-  }, [messages, streamingContent]);
+  }, [messages, streamingContent, state]);
+  
+  // Check if we should show the thinking indicator
+  const isThinking = (state === AppState.TRANSCRIBING || state === AppState.THINKING) && !streamingContent;
 
   // Format messages for export
   const formatMessagesForExport = () => {
@@ -323,6 +351,18 @@ export function ChatMessages({
                       <span className="inline-block w-2 h-4 bg-emerald-500 ml-1 animate-pulse rounded-sm align-middle" />
                     </div>
                   )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Thinking/Loading indicator - show when transcribing or thinking, before streaming starts */}
+          {isThinking && (
+            <div className="flex gap-3 mb-5 animate-fade-in">
+              <ThinkingBotAvatar />
+              <div className="flex flex-col items-start max-w-[75%]">
+                <div className="rounded-2xl rounded-tl-md px-4 py-3 shadow-md bg-[#2a2d32] text-slate-100 border border-slate-700/50">
+                  <TypingDots />
                 </div>
               </div>
             </div>

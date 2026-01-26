@@ -703,6 +703,7 @@ function App() {
           onToggleListening={handleToggleListening}
           onClearChat={handleClearChat}
           isDisabled={isDisabled}
+          state={state}
         />
 
         <ControlBar

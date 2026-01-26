@@ -178,6 +178,37 @@ class ToolCallParser:
         
         return cleaned.strip()
     
+    def convert_tool_calls_for_speech(self, text: str) -> str:
+        """Convert tool calls to speech-friendly announcements.
+        
+        Replaces raw tool call syntax with a friendly "Using tool: [tool_name]."
+        announcement suitable for text-to-speech.
+        
+        Args:
+            text: The text containing tool calls
+            
+        Returns:
+            Text with tool calls replaced by speech-friendly announcements
+        """
+        result = text
+        
+        # Find all tool calls and replace with friendly text
+        tool_calls = self.find_tool_calls(text)
+        
+        # Sort by position in reverse order to replace from end to start
+        # This preserves positions of earlier matches
+        tool_calls.sort(key=lambda tc: tc.start_pos, reverse=True)
+        
+        for tool_call in tool_calls:
+            # Replace the raw tool call with a friendly announcement
+            announcement = f"Using tool: {tool_call.tool}."
+            result = result[:tool_call.start_pos] + announcement + result[tool_call.end_pos:]
+        
+        # Clean up extra whitespace
+        result = re.sub(r'\n{3,}', '\n\n', result)
+        
+        return result.strip()
+    
     def extract_text_before_tool_call(self, text: str) -> tuple[str, Optional[str]]:
         """Split text into content before the first tool call and the rest.
         

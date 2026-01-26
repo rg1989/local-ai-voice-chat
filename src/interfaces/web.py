@@ -167,6 +167,23 @@ class VoiceChatSession:
         if self.conversation_id and content.strip():
             conversation_storage.add_message(self.conversation_id, role, content)
 
+    def _format_tool_call_message(self, content: str) -> str:
+        """Format a tool call message for clean display.
+        
+        If the content contains a tool call, returns a clean "Using tool: name(args)" format.
+        Otherwise returns the original content.
+        """
+        if tool_parser.has_tool_call(content):
+            tool_calls = tool_parser.find_tool_calls(content)
+            if tool_calls:
+                tc = tool_calls[0]
+                if tc.args:
+                    args_str = ", ".join(f"{k}: {v}" for k, v in tc.args.items())
+                    return f"Using tool: {tc.tool}({args_str})"
+                else:
+                    return f"Using tool: {tc.tool}()"
+        return content
+
     async def send_status(self, status: str, data: Optional[dict] = None, include_memory: bool = False) -> None:
         """Send status update to client.
         
@@ -330,8 +347,9 @@ class VoiceChatSession:
                 # End the first message (which contains the tool call)
                 await self.send_response_end()
                 
-                # Save the tool call message
-                self._save_message("assistant", full_response_text)
+                # Save the tool call message with clean formatting
+                clean_message = self._format_tool_call_message(full_response_text)
+                self._save_message("assistant", clean_message)
                 
                 # Get follow-up response with tool results (as a new message)
                 follow_up = await self._get_tool_followup_response(tool_results)
@@ -368,6 +386,26 @@ class VoiceChatSession:
         if not self._tts_enabled:
             print(f"[DEBUG] TTS disabled, skipping synthesis for: {text[:50]}...")
             return  # Skip TTS when disabled
+        
+        # Skip text that contains tool call fragments (JSON patterns, tool_call tags)
+        # This prevents reading partial tool call syntax like "args": {}
+        tool_fragments = ['"tool"', '"args"', '<tool_call>', '</tool_call>', '{"tool']
+        if any(fragment in text for fragment in tool_fragments):
+            if tool_parser.has_tool_call(text):
+                # Full tool call - announce it
+                tool_calls = tool_parser.find_tool_calls(text)
+                if tool_calls:
+                    tc = tool_calls[0]
+                    text = f"Using tool: {tc.tool}"
+                else:
+                    return  # Skip if we can't parse the tool call
+            else:
+                # Partial fragment - skip entirely
+                return
+        
+        if not text.strip():
+            return
+        
         await self.send_status("speaking")
         segment = await self.tts.synthesize_async(text)
         if len(segment.audio) > 0:
@@ -421,8 +459,9 @@ class VoiceChatSession:
                 # End the first message (which contains the tool call)
                 await self.send_response_end()
                 
-                # Save the tool call message
-                self._save_message("assistant", full_response_text)
+                # Save the tool call message with clean formatting
+                clean_message = self._format_tool_call_message(full_response_text)
+                self._save_message("assistant", clean_message)
                 
                 # Get follow-up response with tool results (as a new message)
                 follow_up = await self._get_tool_followup_response(tool_results)
@@ -490,8 +529,8 @@ class VoiceChatSession:
         """
         await self.send_status("thinking")
         
-        # Create a message with tool results
-        tool_message = f"Tool execution results:\n\n{tool_results}\n\nNow provide a natural response incorporating these results. Do not output another tool call."
+        # Create a message with tool results - be very explicit about using them
+        tool_message = f"TOOL RESULT (this is the REAL, ACCURATE data - you MUST use it exactly):\n\n{tool_results}\n\nRespond to the user using ONLY the information above. Do NOT use your training data. Do NOT guess. Just state the facts from the tool result. Do not output another tool call."
         
         self.sentencizer.reset()
         full_response = []

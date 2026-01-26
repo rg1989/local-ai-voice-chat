@@ -19,6 +19,7 @@ from ..config import settings
 from ..pipeline.llm import LLMClient
 from ..pipeline.sentencizer import StreamingSentencizer
 from ..pipeline.stt import SpeechToText
+from ..pipeline.tool_parser import tool_parser
 from ..pipeline.tts import TextToSpeech
 from ..pipeline.vad import SpeechState, VoiceActivityDetector
 
@@ -138,6 +139,25 @@ class VoiceChatCLI:
     def _speak_sentence(self, sentence: str) -> None:
         """Synthesize and play a sentence."""
         try:
+            # Skip text that contains tool call fragments (JSON patterns, tool_call tags)
+            # This prevents reading partial tool call syntax like "args": {}
+            tool_fragments = ['"tool"', '"args"', '<tool_call>', '</tool_call>', '{"tool']
+            if any(fragment in sentence for fragment in tool_fragments):
+                if tool_parser.has_tool_call(sentence):
+                    # Full tool call - announce it
+                    tool_calls = tool_parser.find_tool_calls(sentence)
+                    if tool_calls:
+                        tc = tool_calls[0]
+                        sentence = f"Using tool: {tc.tool}"
+                    else:
+                        return  # Skip if we can't parse the tool call
+                else:
+                    # Partial fragment - skip entirely
+                    return
+            
+            if not sentence.strip():
+                return
+            
             audio_segment = self.tts.synthesize(sentence)
             if len(audio_segment.audio) > 0:
                 self.audio_playback.play(audio_segment.audio, blocking=True)

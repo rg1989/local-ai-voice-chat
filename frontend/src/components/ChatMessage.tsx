@@ -82,6 +82,32 @@ function getToolName(content: string): string | null {
   return match ? match[1] : null;
 }
 
+// Extract tool arguments from content
+function getToolArgs(content: string): Record<string, unknown> | null {
+  // Match the args object - handles nested objects by finding balanced braces
+  const argsMatch = content.match(/"args"\s*:\s*(\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\})/);
+  if (argsMatch) {
+    try {
+      const args = JSON.parse(argsMatch[1]);
+      // Return null if args is empty
+      if (Object.keys(args).length === 0) {
+        return null;
+      }
+      return args;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+// Format args for display
+function formatArgs(args: Record<string, unknown>): string {
+  return Object.entries(args)
+    .map(([key, value]) => `${key}: ${JSON.stringify(value)}`)
+    .join(', ');
+}
+
 // Render text with clickable links
 function TextWithLinks({ text, className }: { text: string; className?: string }) {
   // URL regex pattern
@@ -145,11 +171,15 @@ export function ChatMessage({ message, onContentChange }: ChatMessageProps) {
             <TextWithLinks text={message.content} className="text-sm leading-relaxed whitespace-pre-wrap" />
           ) : isToolCall(message.content) ? (
             <div>
-              <div className="flex items-center gap-2 text-amber-400 text-sm font-medium mb-2">
+              <div className="flex items-center gap-2 text-amber-400 text-sm font-medium">
                 <ToolIcon />
-                <span>Using tool: {getToolName(message.content) || 'unknown'}</span>
+                <span>Using tool: {getToolName(message.content) || 'unknown'}()</span>
               </div>
-              <MarkdownRenderer content={message.content} onContentChange={onContentChange} />
+              {getToolArgs(message.content) && (
+                <div className="mt-2 text-xs text-slate-400 font-mono bg-slate-800/50 rounded px-2 py-1">
+                  {formatArgs(getToolArgs(message.content)!)}
+                </div>
+              )}
             </div>
           ) : (
             <MarkdownRenderer content={message.content} onContentChange={onContentChange} />

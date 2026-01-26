@@ -77,6 +77,32 @@ function getStreamingToolName(content: string): string | null {
   return match ? match[1] : null;
 }
 
+// Extract tool arguments from streaming content
+function getStreamingToolArgs(content: string): Record<string, unknown> | null {
+  // Match the args object - handles nested objects by finding balanced braces
+  const argsMatch = content.match(/"args"\s*:\s*(\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\})/);
+  if (argsMatch) {
+    try {
+      const args = JSON.parse(argsMatch[1]);
+      // Return null if args is empty
+      if (Object.keys(args).length === 0) {
+        return null;
+      }
+      return args;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+// Format args for display
+function formatStreamingArgs(args: Record<string, unknown>): string {
+  return Object.entries(args)
+    .map(([key, value]) => `${key}: ${JSON.stringify(value)}`)
+    .join(', ');
+}
+
 // Trash icon for clear chat
 function TrashIcon() {
   return (
@@ -278,16 +304,25 @@ export function ChatMessages({
                 <div className={`rounded-2xl rounded-tl-md px-4 py-3 shadow-md bg-[#2a2d32] text-slate-100 ${
                   isStreamingToolCall(streamingContent) ? 'border border-amber-500/50' : 'border border-slate-700/50'
                 }`}>
-                  {isStreamingToolCall(streamingContent) && (
-                    <div className="flex items-center gap-2 text-amber-400 text-sm font-medium mb-2">
-                      <ToolIcon />
-                      <span>Using tool: {getStreamingToolName(streamingContent) || '...'}</span>
+                  {isStreamingToolCall(streamingContent) ? (
+                    <div>
+                      <div className="flex items-center gap-2 text-amber-400 text-sm font-medium">
+                        <ToolIcon />
+                        <span>Using tool: {getStreamingToolName(streamingContent) || '...'}()</span>
+                        <span className="inline-block w-2 h-4 bg-amber-500 animate-pulse rounded-sm" />
+                      </div>
+                      {getStreamingToolArgs(streamingContent) && (
+                        <div className="mt-2 text-xs text-slate-400 font-mono bg-slate-800/50 rounded px-2 py-1">
+                          {formatStreamingArgs(getStreamingToolArgs(streamingContent)!)}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="relative">
+                      <MarkdownRenderer content={streamingContent} isStreaming={true} onContentChange={scrollToBottom} />
+                      <span className="inline-block w-2 h-4 bg-emerald-500 ml-1 animate-pulse rounded-sm align-middle" />
                     </div>
                   )}
-                  <div className="relative">
-                    <MarkdownRenderer content={streamingContent} isStreaming={true} onContentChange={scrollToBottom} />
-                    <span className="inline-block w-2 h-4 bg-emerald-500 ml-1 animate-pulse rounded-sm align-middle" />
-                  </div>
                 </div>
               </div>
             </div>

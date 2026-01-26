@@ -6,6 +6,7 @@ import re
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Callable, Optional
+from zoneinfo import ZoneInfo
 from urllib.parse import urlparse
 
 import httpx
@@ -99,9 +100,9 @@ class ToolRegistry:
             handler=self._read_file_handler,
         ))
         
-        # get_datetime tool
+        # get_date tool
         self.register(ToolDefinition(
-            name="get_datetime",
+            name="get_date",
             description="Get the current date and time",
             args={},
             triggers=[
@@ -118,7 +119,7 @@ class ToolRegistry:
                 "do you know the time", "do you know the date",
                 "can you tell me the time", "can you tell me the date"
             ],
-            handler=self._get_datetime_handler,
+            handler=self._get_date_handler,
         ))
         
         # web_search tool (using DuckDuckGo)
@@ -543,14 +544,13 @@ class ToolRegistry:
                 error=f"Error reading file: {str(e)}"
             )
     
-    def _get_datetime_handler(self) -> ToolResult:
-        """Get current date and time."""
-        now = datetime.now()
+    def _get_date_handler(self) -> ToolResult:
+        """Get current date and time in Jerusalem timezone."""
+        jerusalem_tz = ZoneInfo("Asia/Jerusalem")
+        now = datetime.now(jerusalem_tz)
         return ToolResult(
             success=True,
-            output=f"Current date and time: {now.strftime('%A, %B %d, %Y at %I:%M %p')}\n"
-                   f"ISO format: {now.isoformat()}\n"
-                   f"Unix timestamp: {int(now.timestamp())}"
+            output=f"The current date and time is: {now.strftime('%B %d, %Y at %I:%M %p')} (Jerusalem time). Use this EXACT information in your response."
         )
     
     async def _web_search_handler(self, query: str) -> ToolResult:
@@ -739,7 +739,7 @@ def generate_tool_prompt() -> str:
 You have access to the following tools. You MUST use them when needed.
 
 **CRITICAL RULES:**
-1. You do NOT know the current date or time - you MUST use the get_datetime tool. Your training data is outdated.
+1. You do NOT know the current date or time - you MUST use the get_date tool. Your training data is outdated.
 2. You CANNOT browse the internet directly - you MUST use fetch_url or web_search tools
 3. You CANNOT see local files - you MUST use read_file tool
 4. NEVER make up information - USE THE TOOLS to get real data
@@ -774,31 +774,31 @@ After receiving tool results, incorporate them naturally into your response.
 User: "What time is it?"
 You MUST respond with:
 <tool_call>
-{"tool": "get_datetime", "args": {}}
+{"tool": "get_date", "args": {}}
 </tool_call>
 
 User: "What's the date?" or "What is the date today?"
 You MUST respond with:
 <tool_call>
-{"tool": "get_datetime", "args": {}}
+{"tool": "get_date", "args": {}}
 </tool_call>
 
 User: "What day is it?" or "What is today?"
 You MUST respond with:
 <tool_call>
-{"tool": "get_datetime", "args": {}}
+{"tool": "get_date", "args": {}}
 </tool_call>
 
 User: "What year is it?" or "What is the current year?"
 You MUST respond with:
 <tool_call>
-{"tool": "get_datetime", "args": {}}
+{"tool": "get_date", "args": {}}
 </tool_call>
 
 User: "Tell me the time" or "Can you tell me the date?"
 You MUST respond with:
 <tool_call>
-{"tool": "get_datetime", "args": {}}
+{"tool": "get_date", "args": {}}
 </tool_call>
 
 User: "Go to https://example.com and tell me what it's about"
@@ -928,7 +928,7 @@ You MUST respond with:
 </tool_call>
 
 CRITICAL REMINDERS:
-- For ANY date/time/day/year/month question, ALWAYS use get_datetime. You do NOT know the current date or time. Do NOT guess or assume.
+- For ANY date/time/day/year/month question, ALWAYS use get_date. You do NOT know the current date or time. Do NOT guess or assume.
 - When user provides a URL, ALWAYS use fetch_url. Do NOT refuse based on the date in the URL.
 - For ANY weather/temperature/forecast questions, ALWAYS use get_weather with the location. Do NOT guess weather.
 - For ANY math/calculation/percentage/arithmetic question, ALWAYS use calculate. You are BAD at math. Do NOT try to compute in your head.

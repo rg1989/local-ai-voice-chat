@@ -57,6 +57,22 @@ class STTSettings(BaseSettings):
     )
 
 
+class ToolSettings(BaseSettings):
+    """Tool execution settings."""
+
+    model_config = SettingsConfigDict(env_prefix="TOOLS_")
+
+    enabled: bool = Field(default=True, description="Enable tool use capabilities")
+    require_confirmation: bool = Field(
+        default=False, description="Require confirmation for dangerous tools"
+    )
+    fetch_timeout: float = Field(default=10.0, description="Timeout for URL fetches")
+    command_timeout: float = Field(default=30.0, description="Timeout for command execution")
+    max_content_length: int = Field(
+        default=8000, description="Max characters to include from fetched content"
+    )
+
+
 class LLMSettings(BaseSettings):
     """Large Language Model settings."""
 
@@ -115,6 +131,7 @@ class Settings(BaseSettings):
     llm: LLMSettings = Field(default_factory=LLMSettings)
     tts: TTSSettings = Field(default_factory=TTSSettings)
     web: WebSettings = Field(default_factory=WebSettings)
+    tools: ToolSettings = Field(default_factory=ToolSettings)
 
     # Paths
     models_dir: Path = Field(

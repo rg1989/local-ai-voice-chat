@@ -4,10 +4,12 @@ import { ChatHeader } from './components/ChatHeader';
 import { StatusBar } from './components/StatusBar';
 import { ChatMessages } from './components/ChatMessages';
 import { ControlBar } from './components/ControlBar';
+import { ChatSettingsModal } from './components/ChatSettingsModal';
+import { GlobalSettingsModal } from './components/GlobalSettingsModal';
 import { useWebSocket } from './hooks/useWebSocket';
 import { useAudioStream } from './hooks/useAudioStream';
 import { useConversations } from './hooks/useConversations';
-import { AppState, Message, WSMessage, ConversationSummary, MemoryUsage } from './types';
+import { AppState, Message, WSMessage, ConversationSummary, MemoryUsage, ToolInfo } from './types';
 import { generateId } from './utils/audioUtils';
 
 // Voice mapping for display
@@ -69,7 +71,21 @@ function App() {
     updateConversationMessages,
     renameConversation,
     refetchConversation,
+    getConversationSettings,
+    updateConversationSettings,
   } = useConversations();
+
+  // Settings modal state (per-conversation)
+  const [settingsModalOpen, setSettingsModalOpen] = useState(false);
+  const [settingsConversationId, setSettingsConversationId] = useState<string | null>(null);
+  const [settingsCurrentRules, setSettingsCurrentRules] = useState('');
+
+  // Global settings modal state
+  const [globalSettingsOpen, setGlobalSettingsOpen] = useState(false);
+  const [availableTools, setAvailableTools] = useState<ToolInfo[]>([]);
+  const [globalRules, setGlobalRules] = useState(() => {
+    return localStorage.getItem('globalRules') || '';
+  });
 
   const currentUserMessageRef = useRef<string>('');
   const isListeningRef = useRef(false);
@@ -131,6 +147,9 @@ function App() {
       case 'audio':
         playAudio(message.audio, message.sample_rate);
         break;
+      case 'tools_list':
+        setAvailableTools(message.tools);
+        break;
     }
   }, []);
 
@@ -175,7 +194,7 @@ function App() {
     }
   }, []);
 
-  const { isConnected, sendBinary, sendTextMessage, sendStop, sendClearHistory, sendSetVoice, sendSetModel, sendSetConversation, sendSetTtsEnabled } =
+  const { isConnected, sendBinary, sendTextMessage, sendStop, sendClearHistory, sendSetVoice, sendSetModel, sendSetConversation, sendSetTtsEnabled, sendSetCustomRules, sendGetTools, sendSetToolEnabled, sendSetGlobalRules } =
     useWebSocket({
       onMessage: handleMessage,
     });
@@ -307,6 +326,27 @@ function App() {
         sendSetVoice(selectedVoice);
         sendSetTtsEnabled(ttsEnabled);
         
+        // Request available tools
+        sendGetTools();
+        
+        // Send global rules if set
+        if (globalRules) {
+          sendSetGlobalRules(globalRules);
+        }
+        
+        // Restore tool enabled states from localStorage
+        const savedToolStates = localStorage.getItem('toolStates');
+        if (savedToolStates) {
+          try {
+            const toolStates = JSON.parse(savedToolStates) as Record<string, boolean>;
+            Object.entries(toolStates).forEach(([tool, enabled]) => {
+              sendSetToolEnabled(tool, enabled);
+            });
+          } catch (e) {
+            console.error('Failed to parse saved tool states:', e);
+          }
+        }
+        
         // IMPORTANT: Also set the active conversation so messages are saved
         if (activeConversationId) {
           sendSetConversation(activeConversationId);
@@ -315,7 +355,7 @@ function App() {
       
       return () => clearTimeout(timeoutId);
     }
-  }, [isConnected, selectedModel, selectedVoice, ttsEnabled, activeConversationId, sendSetModel, sendSetVoice, sendSetTtsEnabled, sendSetConversation]);
+  }, [isConnected, selectedModel, selectedVoice, ttsEnabled, globalRules, activeConversationId, sendSetModel, sendSetVoice, sendSetTtsEnabled, sendSetConversation, sendGetTools, sendSetGlobalRules, sendSetToolEnabled]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -367,6 +407,100 @@ function App() {
   const handleRenameConversation = useCallback(async (id: string, newTitle: string) => {
     await renameConversation(id, newTitle);
   }, [renameConversation]);
+
+  const handleOpenSettings = useCallback(async (id: string) => {
+    setSettingsConversationId(id);
+    // Load current rules
+    const settings = await getConversationSettings(id);
+    setSettingsCurrentRules(settings?.custom_rules || '');
+    setSettingsModalOpen(true);
+  }, [getConversationSettings]);
+
+  const handleCloseSettings = useCallback(() => {
+    setSettingsModalOpen(false);
+    setSettingsConversationId(null);
+    setSettingsCurrentRules('');
+  }, []);
+
+  const handleSaveSettings = useCallback(async (rules: string) => {
+    if (!settingsConversationId) return;
+    
+    const success = await updateConversationSettings(settingsConversationId, {
+      custom_rules: rules,
+    });
+    
+    if (success) {
+      setToast({ message: 'Chat rules saved', type: 'success' });
+      setTimeout(() => setToast(null), 3000);
+      
+      // If this is the active conversation, also update via WebSocket
+      // so the backend session picks up the new rules immediately
+      if (settingsConversationId === activeConversationId && isConnected) {
+        sendSetCustomRules(rules);
+      }
+    } else {
+      setToast({ message: 'Failed to save rules', type: 'error' });
+      setTimeout(() => setToast(null), 3000);
+    }
+  }, [settingsConversationId, updateConversationSettings, activeConversationId, isConnected, sendSetCustomRules]);
+
+  // Global settings handlers
+  const handleOpenGlobalSettings = useCallback(() => {
+    // Request fresh tools list when opening modal
+    if (isConnected) {
+      sendGetTools();
+    }
+    setGlobalSettingsOpen(true);
+  }, [isConnected, sendGetTools]);
+
+  const handleCloseGlobalSettings = useCallback(() => {
+    setGlobalSettingsOpen(false);
+  }, []);
+
+  const handleToolToggle = useCallback((toolName: string, enabled: boolean) => {
+    // Update local state immediately for responsive UI
+    setAvailableTools(prev => 
+      prev.map(tool => 
+        tool.name === toolName ? { ...tool, enabled } : tool
+      )
+    );
+    
+    // Send to backend
+    if (isConnected) {
+      sendSetToolEnabled(toolName, enabled);
+    }
+    
+    // Persist to localStorage
+    const savedToolStates = localStorage.getItem('toolStates');
+    let toolStates: Record<string, boolean> = {};
+    if (savedToolStates) {
+      try {
+        toolStates = JSON.parse(savedToolStates);
+      } catch (e) {
+        console.error('Failed to parse saved tool states:', e);
+      }
+    }
+    toolStates[toolName] = enabled;
+    localStorage.setItem('toolStates', JSON.stringify(toolStates));
+    
+    setToast({ 
+      message: `Tool "${toolName}" ${enabled ? 'enabled' : 'disabled'}`, 
+      type: 'success' 
+    });
+    setTimeout(() => setToast(null), 3000);
+  }, [isConnected, sendSetToolEnabled]);
+
+  const handleSaveGlobalRules = useCallback((rules: string) => {
+    setGlobalRules(rules);
+    localStorage.setItem('globalRules', rules);
+    
+    if (isConnected) {
+      sendSetGlobalRules(rules);
+    }
+    
+    setToast({ message: 'Global rules saved', type: 'success' });
+    setTimeout(() => setToast(null), 3000);
+  }, [isConnected, sendSetGlobalRules]);
 
   const handleToggleListening = useCallback(async () => {
     if (!ollamaStatus.available) return;
@@ -471,6 +605,8 @@ function App() {
         onNewConversation={handleNewConversation}
         onDeleteConversation={handleDeleteConversation}
         onRenameConversation={handleRenameConversation}
+        onOpenSettings={handleOpenSettings}
+        onOpenGlobalSettings={handleOpenGlobalSettings}
         models={ollamaStatus.models}
         selectedModel={selectedModel}
         onModelChange={handleModelChange}
@@ -478,6 +614,25 @@ function App() {
         selectedVoice={selectedVoice}
         onVoiceChange={handleVoiceChange}
         isDisabled={isDisabled}
+      />
+
+      {/* Chat Settings Modal */}
+      <ChatSettingsModal
+        isOpen={settingsModalOpen}
+        onClose={handleCloseSettings}
+        conversationId={settingsConversationId || ''}
+        currentRules={settingsCurrentRules}
+        onSave={handleSaveSettings}
+      />
+
+      {/* Global Settings Modal */}
+      <GlobalSettingsModal
+        isOpen={globalSettingsOpen}
+        onClose={handleCloseGlobalSettings}
+        tools={availableTools}
+        onToolToggle={handleToolToggle}
+        globalRules={globalRules}
+        onSaveGlobalRules={handleSaveGlobalRules}
       />
 
       {/* Main Chat Area */}

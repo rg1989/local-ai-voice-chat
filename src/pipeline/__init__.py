@@ -5,6 +5,8 @@ from .stt import SpeechToText
 from .llm import LLMClient
 from .tts import TextToSpeech
 from .sentencizer import StreamingSentencizer
+from .tools import tool_registry, ToolRegistry, ToolResult, generate_tool_prompt
+from .tool_parser import tool_parser, ToolCallParser, ParsedToolCall
 
 __all__ = [
     "VoiceActivityDetector",
@@ -12,4 +14,11 @@ __all__ = [
     "LLMClient",
     "TextToSpeech",
     "StreamingSentencizer",
+    "tool_registry",
+    "ToolRegistry",
+    "ToolResult",
+    "generate_tool_prompt",
+    "tool_parser",
+    "ToolCallParser",
+    "ParsedToolCall",
 ]

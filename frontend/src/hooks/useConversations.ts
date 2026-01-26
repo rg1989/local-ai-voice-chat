@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
-import { ConversationSummary, Message } from '../types';
+import { ConversationSummary, ConversationSettings, Message } from '../types';
 
 interface UseConversationsReturn {
   conversations: ConversationSummary[];
@@ -13,6 +13,8 @@ interface UseConversationsReturn {
   updateConversationMessages: (id: string, messages: Message[]) => void;
   renameConversation: (id: string, newTitle: string) => Promise<boolean>;
   refetchConversation: (id: string) => Promise<void>;
+  getConversationSettings: (id: string) => Promise<ConversationSettings | null>;
+  updateConversationSettings: (id: string, settings: Partial<ConversationSettings>) => Promise<boolean>;
 }
 
 export function useConversations(): UseConversationsReturn {
@@ -227,6 +229,54 @@ export function useConversations(): UseConversationsReturn {
     }
   }, []);
 
+  const getConversationSettings = useCallback(async (id: string): Promise<ConversationSettings | null> => {
+    try {
+      const response = await fetch(`/api/conversations/${id}/settings`);
+      if (response.ok) {
+        const data = await response.json();
+        return {
+          custom_rules: data.custom_rules || '',
+        };
+      }
+      return null;
+    } catch (err) {
+      console.error('Failed to get conversation settings:', err);
+      return null;
+    }
+  }, []);
+
+  const updateConversationSettings = useCallback(async (
+    id: string, 
+    settings: Partial<ConversationSettings>
+  ): Promise<boolean> => {
+    try {
+      setError(null);
+      const response = await fetch(`/api/conversations/${id}/settings`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settings),
+      });
+      
+      if (response.ok) {
+        // Update local state with new custom_rules
+        if (settings.custom_rules !== undefined) {
+          setConversations((prev) => 
+            prev.map((c) => c.id === id 
+              ? { ...c, custom_rules: settings.custom_rules } 
+              : c
+            )
+          );
+        }
+        return true;
+      }
+      return false;
+    } catch (err) {
+      console.error('Failed to update conversation settings:', err);
+      setError('Failed to update settings');
+      return false;
+    }
+  }, []);
+
   // Initial load
   useEffect(() => {
     fetchConversations();
@@ -244,5 +294,7 @@ export function useConversations(): UseConversationsReturn {
     updateConversationMessages,
     renameConversation,
     refetchConversation,
+    getConversationSettings,
+    updateConversationSettings,
   };
 }

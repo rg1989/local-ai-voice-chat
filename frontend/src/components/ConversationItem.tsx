@@ -7,6 +7,7 @@ interface ConversationItemProps {
   onSelect: () => void;
   onDelete: () => void;
   onRename: (newTitle: string) => void;
+  onOpenSettings: () => void;
 }
 
 // Format relative time
@@ -44,6 +45,16 @@ function EditIcon() {
   );
 }
 
+// Settings/Gear icon
+function SettingsIcon() {
+  return (
+    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+    </svg>
+  );
+}
+
 // Chat icon for conversation
 function ChatIcon() {
   return (
@@ -59,6 +70,7 @@ export function ConversationItem({
   onSelect,
   onDelete,
   onRename,
+  onOpenSettings,
 }: ConversationItemProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(conversation.title || 'New Conversation');
@@ -87,6 +99,11 @@ export function ConversationItem({
   const handleEdit = (e: React.MouseEvent) => {
     e.stopPropagation();
     setIsEditing(true);
+  };
+
+  const handleSettings = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onOpenSettings();
   };
 
   const handleDoubleClick = (e: React.MouseEvent) => {
@@ -131,7 +148,7 @@ export function ConversationItem({
         {/* Avatar */}
         <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${
           isActive 
-            ? 'bg-gradient-to-br from-emerald-500 to-teal-600' 
+            ? 'bg-linear-to-br from-emerald-500 to-teal-600' 
             : 'bg-slate-600'
         }`}>
           <ChatIcon />
@@ -172,13 +189,26 @@ export function ConversationItem({
             {/* Action buttons - shown on hover */}
             <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all">
               {!isEditing && (
-                <button
-                  onClick={handleEdit}
-                  className="p-1 text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/10 rounded transition-all cursor-pointer"
-                  title="Rename conversation"
-                >
-                  <EditIcon />
-                </button>
+                <>
+                  <button
+                    onClick={handleEdit}
+                    className="p-1 text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/10 rounded transition-all cursor-pointer"
+                    title="Rename conversation"
+                  >
+                    <EditIcon />
+                  </button>
+                  <button
+                    onClick={handleSettings}
+                    className={`p-1 rounded transition-all cursor-pointer ${
+                      conversation.custom_rules 
+                        ? 'text-emerald-400 hover:text-emerald-300 hover:bg-emerald-500/10' 
+                        : 'text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/10'
+                    }`}
+                    title={conversation.custom_rules ? "Edit chat rules (active)" : "Add chat rules"}
+                  >
+                    <SettingsIcon />
+                  </button>
+                </>
               )}
               <button
                 onClick={handleDelete}

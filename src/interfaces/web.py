@@ -14,6 +14,8 @@ from fastapi.staticfiles import StaticFiles
 
 from ..config import settings
 from ..pipeline.llm import LLMClient
+from ..pipeline.tools import tool_registry
+from ..pipeline.tool_parser import tool_parser
 from ..storage.conversations import ConversationStorage
 from ..pipeline.sentencizer import StreamingSentencizer
 from ..pipeline.stt import SpeechToText
@@ -136,17 +138,29 @@ class VoiceChatSession:
                     elif msg.role == "assistant":
                         self.llm.history.add_assistant_message(msg.content)
                 
+                # Load custom rules for this conversation
+                self.llm.set_custom_rules(conversation.custom_rules)
+                
                 # Update token estimate based on loaded history
                 self.llm.update_token_estimate_from_history()
         else:
-            # New conversation - reset token count
+            # New conversation - reset token count and custom rules
             self.llm._last_prompt_tokens = 0
+            self.llm.set_custom_rules("")
 
     def set_conversation(self, conversation_id: str) -> None:
         """Switch to a different conversation."""
         self.conversation_id = conversation_id
         self.llm.clear_history()
+        self.llm.set_custom_rules("")  # Reset before loading
         self._load_conversation_history()
+
+    def set_custom_rules(self, rules: str) -> None:
+        """Set custom rules for the current conversation."""
+        self.llm.set_custom_rules(rules)
+        # Also save to storage if conversation exists
+        if self.conversation_id:
+            conversation_storage.update_custom_rules(self.conversation_id, rules)
 
     def _save_message(self, role: str, content: str) -> None:
         """Save a message to the current conversation."""
@@ -308,11 +322,28 @@ class VoiceChatSession:
             if remaining and not self._cancel_requested:
                 await self.synthesize_and_send(remaining)
 
-            await self.send_response_end()
-            
-            # Save assistant message to conversation
+            # Check for and execute tool calls
             full_response_text = "".join(full_response)
-            self._save_message("assistant", full_response_text)
+            tool_results = await self._execute_tools_if_present(full_response_text)
+            
+            if tool_results and not self._cancel_requested:
+                # End the first message (which contains the tool call)
+                await self.send_response_end()
+                
+                # Save the tool call message
+                self._save_message("assistant", full_response_text)
+                
+                # Get follow-up response with tool results (as a new message)
+                follow_up = await self._get_tool_followup_response(tool_results)
+                if follow_up:
+                    # End the follow-up message
+                    await self.send_response_end()
+                    # Save the follow-up message
+                    self._save_message("assistant", follow_up)
+            else:
+                await self.send_response_end()
+                # Save assistant message to conversation
+                self._save_message("assistant", full_response_text)
             
             print(f"[DEBUG] Response complete: {len(full_response)} tokens")
             
@@ -382,11 +413,28 @@ class VoiceChatSession:
             if remaining and not self._cancel_requested:
                 await self.synthesize_and_send(remaining)
 
-            await self.send_response_end()
-            
-            # Save assistant message to conversation
+            # Check for and execute tool calls
             full_response_text = "".join(full_response)
-            self._save_message("assistant", full_response_text)
+            tool_results = await self._execute_tools_if_present(full_response_text)
+            
+            if tool_results and not self._cancel_requested:
+                # End the first message (which contains the tool call)
+                await self.send_response_end()
+                
+                # Save the tool call message
+                self._save_message("assistant", full_response_text)
+                
+                # Get follow-up response with tool results (as a new message)
+                follow_up = await self._get_tool_followup_response(tool_results)
+                if follow_up:
+                    # End the follow-up message
+                    await self.send_response_end()
+                    # Save the follow-up message
+                    self._save_message("assistant", follow_up)
+            else:
+                await self.send_response_end()
+                # Save assistant message to conversation
+                self._save_message("assistant", full_response_text)
             
             # Send "listening" with memory usage to resume audio streaming
             await self.send_status("listening", include_memory=True)
@@ -401,6 +449,74 @@ class VoiceChatSession:
                 {"type": "error", "message": f"LLM error: {str(e)}"}
             )
             await self.send_status("listening", include_memory=True)
+    
+    async def _execute_tools_if_present(self, response_text: str) -> str | None:
+        """Check for and execute tool calls in the response.
+        
+        Returns:
+            Tool results string if tools were executed, None otherwise
+        """
+        if not self.llm.tools_enabled:
+            return None
+        
+        tool_calls = tool_parser.find_tool_calls(response_text)
+        if not tool_calls:
+            return None
+        
+        results = []
+        for call in tool_calls:
+            print(f"[TOOL] Executing: {call.tool} with args: {call.args}")
+            await self.send_status("executing_tool", {"tool": call.tool})
+            
+            result = await tool_registry.execute(call.tool, call.args)
+            
+            if result.success:
+                results.append(f"[Tool: {call.tool}]\n{result.output}")
+                print(f"[TOOL] Success: {result.output[:200]}...")
+            else:
+                results.append(f"[Tool: {call.tool}] Error: {result.error}")
+                print(f"[TOOL] Error: {result.error}")
+        
+        return "\n\n".join(results)
+    
+    async def _get_tool_followup_response(self, tool_results: str) -> str | None:
+        """Get a follow-up response from the LLM after tool execution.
+        
+        Args:
+            tool_results: The results from tool execution
+            
+        Returns:
+            The follow-up response text
+        """
+        await self.send_status("thinking")
+        
+        # Create a message with tool results
+        tool_message = f"Tool execution results:\n\n{tool_results}\n\nNow provide a natural response incorporating these results. Do not output another tool call."
+        
+        self.sentencizer.reset()
+        full_response = []
+        
+        # Stream the follow-up response
+        async for token in await self.llm.chat_async(tool_message, stream=True):
+            if self._cancel_requested:
+                self._cancel_requested = False
+                return None
+                
+            await self.send_response_token(token)
+            full_response.append(token)
+            
+            sentence = self.sentencizer.add_token(token)
+            if sentence:
+                if self._cancel_requested:
+                    self._cancel_requested = False
+                    return None
+                await self.synthesize_and_send(sentence)
+        
+        remaining = self.sentencizer.flush()
+        if remaining and not self._cancel_requested:
+            await self.synthesize_and_send(remaining)
+        
+        return "".join(full_response)
 
     def request_cancel(self) -> None:
         """Request cancellation of current processing."""
@@ -494,6 +610,39 @@ async def websocket_chat(websocket: WebSocket):
                     session._tts_enabled = enabled
                     await session.send_status("tts_enabled_changed", {"enabled": enabled})
 
+                elif msg_type == "set_custom_rules":
+                    rules = data.get("rules", "")
+                    print(f"[DEBUG] Custom rules set: {rules[:50]}...")
+                    session.set_custom_rules(rules)
+                    await session.send_status("custom_rules_changed", {"rules": rules})
+
+                elif msg_type == "get_tools":
+                    # Return list of available tools with their enabled state
+                    tools_list = [
+                        {
+                            "name": tool.name,
+                            "description": tool.description,
+                            "enabled": tool.enabled,
+                            "requires_confirmation": tool.requires_confirmation,
+                        }
+                        for tool in tool_registry.get_all_tools()
+                    ]
+                    await manager.send_json(websocket, {"type": "tools_list", "tools": tools_list})
+
+                elif msg_type == "set_tool_enabled":
+                    tool_name = data.get("tool")
+                    enabled = data.get("enabled", True)
+                    if tool_name:
+                        tool_registry.set_tool_enabled(tool_name, enabled)
+                        print(f"[DEBUG] Tool '{tool_name}' enabled: {enabled}")
+                        await session.send_status("tool_enabled_changed", {"tool": tool_name, "enabled": enabled})
+
+                elif msg_type == "set_global_rules":
+                    rules = data.get("rules", "")
+                    print(f"[DEBUG] Global rules set: {rules[:50] if rules else '(empty)'}...")
+                    session.llm.set_global_rules(rules)
+                    await session.send_status("global_rules_changed", {"rules": rules})
+
     except WebSocketDisconnect:
         pass
     except RuntimeError as e:
@@ -564,6 +713,11 @@ class UpdateConversationRequest(BaseModel):
     title: Optional[str] = None
 
 
+class UpdateConversationSettingsRequest(BaseModel):
+    """Request body for updating conversation settings."""
+    custom_rules: Optional[str] = None
+
+
 class AddMessageRequest(BaseModel):
     """Request body for adding a message."""
     role: str
@@ -615,6 +769,39 @@ async def delete_conversation(conversation_id: str):
     if not success:
         raise HTTPException(status_code=404, detail="Conversation not found")
     return {"success": True}
+
+
+@app.put("/api/conversations/{conversation_id}/settings")
+async def update_conversation_settings(
+    conversation_id: str, 
+    request: UpdateConversationSettingsRequest
+):
+    """Update conversation settings (custom rules, etc.)."""
+    conversation = conversation_storage.load(conversation_id)
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    # Update custom rules if provided
+    if request.custom_rules is not None:
+        conversation.custom_rules = request.custom_rules
+
+    conversation_storage.save(conversation)
+    return {
+        "success": True,
+        "custom_rules": conversation.custom_rules
+    }
+
+
+@app.get("/api/conversations/{conversation_id}/settings")
+async def get_conversation_settings(conversation_id: str):
+    """Get conversation settings."""
+    conversation = conversation_storage.load(conversation_id)
+    if conversation is None:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    
+    return {
+        "custom_rules": conversation.custom_rules
+    }
 
 
 @app.post("/api/conversations/{conversation_id}/messages")

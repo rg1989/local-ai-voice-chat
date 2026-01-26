@@ -56,6 +56,27 @@ function StreamingBotAvatar() {
   );
 }
 
+// Tool icon for streaming tool calls
+function ToolIcon() {
+  return (
+    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+    </svg>
+  );
+}
+
+// Check if content is a tool call
+function isStreamingToolCall(content: string): boolean {
+  return content.includes('"tool"') && content.includes('"args"');
+}
+
+// Extract tool name from streaming content
+function getStreamingToolName(content: string): string | null {
+  const match = content.match(/"tool"\s*:\s*"([^"]+)"/);
+  return match ? match[1] : null;
+}
+
 // Trash icon for clear chat
 function TrashIcon() {
   return (
@@ -254,7 +275,15 @@ export function ChatMessages({
             <div className="flex gap-3 mb-5 animate-fade-in">
               <StreamingBotAvatar />
               <div className="flex flex-col items-start max-w-[75%]">
-                <div className="rounded-2xl rounded-tl-md px-4 py-3 shadow-md bg-[#2a2d32] text-slate-100 border border-slate-700/50">
+                <div className={`rounded-2xl rounded-tl-md px-4 py-3 shadow-md bg-[#2a2d32] text-slate-100 ${
+                  isStreamingToolCall(streamingContent) ? 'border border-amber-500/50' : 'border border-slate-700/50'
+                }`}>
+                  {isStreamingToolCall(streamingContent) && (
+                    <div className="flex items-center gap-2 text-amber-400 text-sm font-medium mb-2">
+                      <ToolIcon />
+                      <span>Using tool: {getStreamingToolName(streamingContent) || '...'}</span>
+                    </div>
+                  )}
                   <div className="relative">
                     <MarkdownRenderer content={streamingContent} isStreaming={true} onContentChange={scrollToBottom} />
                     <span className="inline-block w-2 h-4 bg-emerald-500 ml-1 animate-pulse rounded-sm align-middle" />

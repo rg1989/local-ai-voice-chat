@@ -104,6 +104,22 @@ export function useWebSocket({ onMessage, onOpen, onClose, onError }: UseWebSock
     sendJson({ type: 'set_tts_enabled', enabled });
   }, [sendJson]);
 
+  const sendSetCustomRules = useCallback((rules: string) => {
+    sendJson({ type: 'set_custom_rules', rules });
+  }, [sendJson]);
+
+  const sendGetTools = useCallback(() => {
+    sendJson({ type: 'get_tools' });
+  }, [sendJson]);
+
+  const sendSetToolEnabled = useCallback((tool: string, enabled: boolean) => {
+    sendJson({ type: 'set_tool_enabled', tool, enabled });
+  }, [sendJson]);
+
+  const sendSetGlobalRules = useCallback((rules: string) => {
+    sendJson({ type: 'set_global_rules', rules });
+  }, [sendJson]);
+
   useEffect(() => {
     connect();
     return () => disconnect();
@@ -120,5 +136,9 @@ export function useWebSocket({ onMessage, onOpen, onClose, onError }: UseWebSock
     sendSetModel,
     sendSetConversation,
     sendSetTtsEnabled,
+    sendSetCustomRules,
+    sendGetTools,
+    sendSetToolEnabled,
+    sendSetGlobalRules,
   };
 }

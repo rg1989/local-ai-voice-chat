@@ -31,6 +31,7 @@ export interface ConversationSummary {
     preview: string;
     timestamp: string;
   } | null;
+  custom_rules?: string;
 }
 
 export interface Conversation {
@@ -39,6 +40,26 @@ export interface Conversation {
   created_at: string;
   updated_at: string;
   messages: Message[];
+  custom_rules?: string;
+}
+
+// Conversation settings
+export interface ConversationSettings {
+  custom_rules: string;
+}
+
+// Tool types
+export interface ToolInfo {
+  name: string;
+  description: string;
+  enabled: boolean;
+  requires_confirmation: boolean;
+}
+
+// Global settings
+export interface GlobalSettings {
+  tools: Record<string, boolean>; // tool_name -> enabled
+  globalRules: string;
 }
 
 // Memory usage tracking
@@ -77,9 +98,15 @@ export interface WSAudioMessage {
   sample_rate: number;
 }
 
+export interface WSToolsListMessage {
+  type: 'tools_list';
+  tools: ToolInfo[];
+}
+
 export type WSMessage =
   | WSStatusMessage
   | WSTranscriptionMessage
   | WSResponseTokenMessage
   | WSResponseEndMessage
-  | WSAudioMessage;
+  | WSAudioMessage
+  | WSToolsListMessage;

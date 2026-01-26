@@ -51,6 +51,7 @@ class Conversation:
     created_at: str  # ISO format
     updated_at: str  # ISO format
     messages: list[StoredMessage] = field(default_factory=list)
+    custom_rules: str = ""  # Per-chat custom instructions/rules
 
     @classmethod
     def create(cls, title: str = "New Conversation") -> "Conversation":
@@ -62,6 +63,7 @@ class Conversation:
             created_at=now,
             updated_at=now,
             messages=[],
+            custom_rules="",
         )
 
     def add_message(self, role: str, content: str) -> StoredMessage:
@@ -87,6 +89,7 @@ class Conversation:
             "created_at": self.created_at,
             "updated_at": self.updated_at,
             "messages": [m.to_dict() for m in self.messages],
+            "custom_rules": self.custom_rules,
         }
 
     @classmethod
@@ -98,6 +101,7 @@ class Conversation:
             created_at=data.get("created_at", datetime.now().isoformat()),
             updated_at=data.get("updated_at", datetime.now().isoformat()),
             messages=[StoredMessage.from_dict(m) for m in data.get("messages", [])],
+            custom_rules=data.get("custom_rules", ""),
         )
 
 
@@ -196,6 +200,7 @@ class ConversationStorage:
                 "updated_at": conv.updated_at,
                 "message_count": len(conv.messages),
                 "last_message": last_message,
+                "custom_rules": conv.custom_rules,
             })
 
         return summaries
@@ -228,3 +233,36 @@ class ConversationStorage:
         conversation.updated_at = datetime.now().isoformat()
         self.save(conversation)
         return True
+
+    def update_custom_rules(self, conversation_id: str, custom_rules: str) -> bool:
+        """Update custom rules for a conversation.
+        
+        Args:
+            conversation_id: The conversation ID
+            custom_rules: The new custom rules text
+            
+        Returns:
+            True if successful, False if conversation not found
+        """
+        conversation = self.load(conversation_id)
+        if conversation is None:
+            return False
+
+        conversation.custom_rules = custom_rules
+        conversation.updated_at = datetime.now().isoformat()
+        self.save(conversation)
+        return True
+
+    def get_custom_rules(self, conversation_id: str) -> Optional[str]:
+        """Get custom rules for a conversation.
+        
+        Args:
+            conversation_id: The conversation ID
+            
+        Returns:
+            Custom rules string or None if conversation not found
+        """
+        conversation = self.load(conversation_id)
+        if conversation is None:
+            return None
+        return conversation.custom_rules

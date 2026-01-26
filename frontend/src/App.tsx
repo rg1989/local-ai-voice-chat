@@ -285,20 +285,37 @@ function App() {
       .catch((err) => console.error('Failed to fetch voices:', err));
   }, []);
 
+  // Track if we've synced preferences for this connection
+  const hasSyncedPrefsRef = useRef(false);
+  
+  // Reset sync flag when disconnected
+  useEffect(() => {
+    if (!isConnected) {
+      hasSyncedPrefsRef.current = false;
+    }
+  }, [isConnected]);
+  
   // Send saved preferences to backend when connected
   useEffect(() => {
-    if (isConnected && selectedModel && selectedVoice) {
-      // Send saved model preference to backend
-      sendSetModel(selectedModel);
-      sendSetVoice(selectedVoice);
-      sendSetTtsEnabled(ttsEnabled);
+    if (isConnected && selectedModel && selectedVoice && !hasSyncedPrefsRef.current) {
+      hasSyncedPrefsRef.current = true;
       
-      // IMPORTANT: Also set the active conversation so messages are saved
-      if (activeConversationId) {
-        sendSetConversation(activeConversationId);
-      }
+      // Small delay to ensure WebSocket is fully ready to send messages
+      const timeoutId = setTimeout(() => {
+        // Send saved preferences to backend
+        sendSetModel(selectedModel);
+        sendSetVoice(selectedVoice);
+        sendSetTtsEnabled(ttsEnabled);
+        
+        // IMPORTANT: Also set the active conversation so messages are saved
+        if (activeConversationId) {
+          sendSetConversation(activeConversationId);
+        }
+      }, 100);
+      
+      return () => clearTimeout(timeoutId);
     }
-  }, [isConnected]); // Only run when connection state changes
+  }, [isConnected, selectedModel, selectedVoice, ttsEnabled, activeConversationId, sendSetModel, sendSetVoice, sendSetTtsEnabled, sendSetConversation]);
 
   // Cleanup on unmount
   useEffect(() => {

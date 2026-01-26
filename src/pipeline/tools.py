@@ -11,6 +11,8 @@ from urllib.parse import urlparse
 
 import httpx
 
+from src.storage.memories import memory_storage
+
 # Optional: trafilatura for better web content extraction
 try:
     import trafilatura
@@ -209,6 +211,46 @@ class ToolRegistry:
                 "times", "over", "raised to"
             ],
             handler=self._calculate_handler,
+        ))
+        
+        # add_memory tool - store information across all conversations
+        self.register(ToolDefinition(
+            name="add_memory",
+            description="Store important information to remember across all conversations. Use this when the user asks you to remember something permanently.",
+            args={
+                "content": "The information to remember (e.g., 'User's name is John', 'User prefers dark mode')",
+                "tags": "Optional comma-separated tags for categorization (e.g., 'personal,preferences')"
+            },
+            triggers=[
+                "remember", "remember this", "remember that", "remember my",
+                "add to memory", "save to memory", "store in memory",
+                "memorize", "memorize this", "memorize that",
+                "don't forget", "keep in mind", "note that",
+                "save this", "store this", "keep this",
+                "my name is", "i am called", "call me",
+                "i like", "i prefer", "i want you to remember",
+                "always remember", "never forget"
+            ],
+            handler=self._add_memory_handler,
+        ))
+        
+        # check_memory tool - recall stored information
+        self.register(ToolDefinition(
+            name="check_memory",
+            description="Search and recall stored memories. Use this when the user asks what you remember about something.",
+            args={
+                "query": "What to search for in memories (e.g., 'name', 'preferences', 'birthday')"
+            },
+            triggers=[
+                "recall", "recall my", "what do you remember",
+                "check memory", "check your memory", "search memory",
+                "do you remember", "do you recall",
+                "what's my", "what is my", "what are my",
+                "you should know", "you should remember",
+                "have i told you", "did i tell you",
+                "what did i say about", "what did i tell you about"
+            ],
+            handler=self._check_memory_handler,
         ))
     
     def register(self, tool: ToolDefinition) -> None:
@@ -715,6 +757,77 @@ class ToolRegistry:
                 error=f"Calculation error: {str(e)}"
             )
     
+    def _add_memory_handler(self, content: str, tags: str = "") -> ToolResult:
+        """Add information to persistent memory."""
+        if not content or not content.strip():
+            return ToolResult(
+                success=False,
+                output="",
+                error="Memory content cannot be empty"
+            )
+        
+        # Parse tags from comma-separated string
+        tag_list = []
+        if tags and tags.strip():
+            tag_list = [t.strip() for t in tags.split(",") if t.strip()]
+        
+        try:
+            # Get conversation_id from context if available (will be set by caller)
+            conversation_id = getattr(self, '_current_conversation_id', None)
+            
+            memory = memory_storage.add(
+                content=content.strip(),
+                source_conversation_id=conversation_id,
+                tags=tag_list
+            )
+            
+            tags_str = f" with tags [{', '.join(tag_list)}]" if tag_list else ""
+            return ToolResult(
+                success=True,
+                output=f"Memory saved{tags_str}: \"{content.strip()}\""
+            )
+        except Exception as e:
+            return ToolResult(
+                success=False,
+                output="",
+                error=f"Failed to save memory: {str(e)}"
+            )
+    
+    def _check_memory_handler(self, query: str) -> ToolResult:
+        """Search and recall stored memories."""
+        try:
+            memories = memory_storage.search(query)
+            
+            if not memories:
+                return ToolResult(
+                    success=True,
+                    output=f"No memories found matching '{query}'. The memory is empty or nothing matches your search."
+                )
+            
+            # Format the results
+            results = []
+            for i, memory in enumerate(memories[:10], 1):  # Limit to 10 results
+                tags_str = f" [{', '.join(memory.tags)}]" if memory.tags else ""
+                results.append(f"{i}. {memory.content}{tags_str}")
+            
+            output = f"Found {len(memories)} memor{'y' if len(memories) == 1 else 'ies'} matching '{query}':\n\n"
+            output += "\n".join(results)
+            
+            return ToolResult(
+                success=True,
+                output=output
+            )
+        except Exception as e:
+            return ToolResult(
+                success=False,
+                output="",
+                error=f"Failed to search memories: {str(e)}"
+            )
+    
+    def set_conversation_context(self, conversation_id: Optional[str]) -> None:
+        """Set the current conversation context for memory attribution."""
+        self._current_conversation_id = conversation_id
+    
     async def close(self) -> None:
         """Close HTTP client."""
         if self._http_client:
@@ -927,6 +1040,54 @@ You MUST respond with:
 {"tool": "calculate", "args": {"expression": "pow(5, 3)"}}
 </tool_call>
 
+User: "Remember that my name is John"
+You MUST respond with:
+<tool_call>
+{"tool": "add_memory", "args": {"content": "User's name is John", "tags": "personal,name"}}
+</tool_call>
+
+User: "Add to memory that I prefer dark mode"
+You MUST respond with:
+<tool_call>
+{"tool": "add_memory", "args": {"content": "User prefers dark mode", "tags": "preferences"}}
+</tool_call>
+
+User: "Remember I'm allergic to peanuts"
+You MUST respond with:
+<tool_call>
+{"tool": "add_memory", "args": {"content": "User is allergic to peanuts", "tags": "health,allergies"}}
+</tool_call>
+
+User: "My birthday is March 15th, please remember that"
+You MUST respond with:
+<tool_call>
+{"tool": "add_memory", "args": {"content": "User's birthday is March 15th", "tags": "personal,birthday"}}
+</tool_call>
+
+User: "What's my name?" or "Do you remember my name?"
+You MUST respond with:
+<tool_call>
+{"tool": "check_memory", "args": {"query": "name"}}
+</tool_call>
+
+User: "What do you remember about me?"
+You MUST respond with:
+<tool_call>
+{"tool": "check_memory", "args": {"query": ""}}
+</tool_call>
+
+User: "Do you recall my preferences?"
+You MUST respond with:
+<tool_call>
+{"tool": "check_memory", "args": {"query": "preferences"}}
+</tool_call>
+
+User: "What did I tell you about my allergies?"
+You MUST respond with:
+<tool_call>
+{"tool": "check_memory", "args": {"query": "allergies"}}
+</tool_call>
+
 CRITICAL REMINDERS:
 - For ANY date/time/day/year/month question, ALWAYS use get_date. You do NOT know the current date or time. Do NOT guess or assume.
 - When user provides a URL, ALWAYS use fetch_url. Do NOT refuse based on the date in the URL.
@@ -938,6 +1099,9 @@ CRITICAL REMINDERS:
 - NEVER say "I don't have access to real-time information" - you DO have access through these tools. USE THEM.
 - NEVER attempt mental arithmetic - ALWAYS use the calculate tool for any numbers.
 - When in doubt, USE A TOOL rather than guessing or making up information.
+- When user asks to "remember" something, ALWAYS use add_memory. Memories persist across ALL conversations.
+- When user asks "what's my name", "do you remember", "what did I tell you", ALWAYS use check_memory first.
+- Memories are PERSISTENT and shared across all chats. Use them to provide personalized responses.
 """
     
     return prompt

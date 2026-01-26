@@ -49,6 +49,7 @@ from ..pipeline.llm import LLMClient
 from ..pipeline.tools import tool_registry
 from ..pipeline.tool_parser import tool_parser
 from ..storage.conversations import ConversationStorage, InteractionLog
+from ..storage.memories import memory_storage
 from ..pipeline.sentencizer import StreamingSentencizer
 from ..pipeline.stt import SpeechToText
 from ..pipeline.tts import TextToSpeech
@@ -244,6 +245,9 @@ class VoiceChatSession:
         self.conversation_id = conversation_id
         self._load_conversation_history()
         
+        # Set conversation context for memory attribution
+        tool_registry.set_conversation_context(conversation_id)
+        
         # Register wake word callbacks
         self.wakeword.on_wake_detected(self._on_wake_detected)
         self.wakeword.on_timeout(self._on_wake_timeout)
@@ -313,6 +317,8 @@ class VoiceChatSession:
         self.llm.clear_history()  # This also clears the summary
         self.llm.set_custom_rules("")  # Reset before loading
         self._load_conversation_history()
+        # Update tool registry with conversation context for memory attribution
+        tool_registry.set_conversation_context(conversation_id)
 
     def set_custom_rules(self, rules: str) -> None:
         """Set custom rules for the current conversation."""
@@ -1063,7 +1069,6 @@ async def websocket_chat(websocket: WebSocket):
                     # Pre-load the model if enabling wake word
                     if enabled:
                         # Run model loading in background to avoid blocking WebSocket
-                        import asyncio
                         loop = asyncio.get_event_loop()
                         await loop.run_in_executor(None, session.wakeword.preload_model)
                         print(f"[DEBUG] Wake word model preloaded, ready={session.wakeword.is_ready}")
@@ -1076,6 +1081,71 @@ async def websocket_chat(websocket: WebSocket):
                     # Also send current wake status
                     if session.wakeword.enabled:
                         await session._send_wake_status(session.wakeword.state.value)
+
+                elif msg_type == "get_memories":
+                    # Return all memories
+                    query = data.get("query", "")
+                    if query:
+                        memories = memory_storage.search(query)
+                    else:
+                        memories = memory_storage.get_all()
+                    await manager.send_json(websocket, {
+                        "type": "memories_list",
+                        "memories": [m.to_dict() for m in memories],
+                        "count": len(memories)
+                    })
+
+                elif msg_type == "add_memory":
+                    # Add a new memory
+                    content = data.get("content", "").strip()
+                    tags = data.get("tags", [])
+                    if content:
+                        memory = memory_storage.add(
+                            content=content,
+                            source_conversation_id=session.conversation_id,
+                            tags=tags if isinstance(tags, list) else []
+                        )
+                        await manager.send_json(websocket, {
+                            "type": "memory_added",
+                            "memory": memory.to_dict()
+                        })
+                        print(f"[MEMORY] Added: {content[:50]}...")
+
+                elif msg_type == "delete_memory":
+                    # Delete a memory
+                    memory_id = data.get("memory_id")
+                    if memory_id:
+                        success = memory_storage.delete(memory_id)
+                        await manager.send_json(websocket, {
+                            "type": "memory_deleted",
+                            "memory_id": memory_id,
+                            "success": success
+                        })
+                        print(f"[MEMORY] Deleted: {memory_id} (success={success})")
+
+                elif msg_type == "update_memory":
+                    # Update an existing memory
+                    memory_id = data.get("memory_id")
+                    content = data.get("content", "").strip()
+                    tags = data.get("tags")
+                    if memory_id and content:
+                        memory = memory_storage.update(
+                            memory_id=memory_id,
+                            content=content,
+                            tags=tags if isinstance(tags, list) else None
+                        )
+                        if memory:
+                            await manager.send_json(websocket, {
+                                "type": "memory_updated",
+                                "memory": memory.to_dict()
+                            })
+                            print(f"[MEMORY] Updated: {memory_id}")
+                        else:
+                            await manager.send_json(websocket, {
+                                "type": "memory_update_failed",
+                                "memory_id": memory_id,
+                                "error": "Memory not found"
+                            })
 
     except WebSocketDisconnect:
         pass
@@ -1315,6 +1385,91 @@ async def get_conversation_logs(conversation_id: str, limit: int = Query(default
         "log_count": len(logs),
         "logs": [log.to_dict() for log in logs]
     }
+
+
+# ===== Memory Endpoints =====
+
+
+class AddMemoryRequest(BaseModel):
+    """Request body for adding a memory."""
+    content: str
+    tags: list[str] = []
+    source_conversation_id: Optional[str] = None
+
+
+class UpdateMemoryRequest(BaseModel):
+    """Request body for updating a memory."""
+    content: str
+    tags: list[str] = []
+
+
+@app.get("/api/memories")
+async def list_memories(query: Optional[str] = Query(default=None)):
+    """List all memories, optionally filtered by search query."""
+    if query:
+        memories = memory_storage.search(query)
+    else:
+        memories = memory_storage.get_all()
+    
+    return {
+        "memories": [m.to_dict() for m in memories],
+        "count": len(memories)
+    }
+
+
+@app.get("/api/memories/{memory_id}")
+async def get_memory(memory_id: str):
+    """Get a single memory by ID."""
+    memory = memory_storage.get(memory_id)
+    if memory is None:
+        raise HTTPException(status_code=404, detail="Memory not found")
+    return {"memory": memory.to_dict()}
+
+
+@app.post("/api/memories")
+async def add_memory(request: AddMemoryRequest):
+    """Add a new memory."""
+    if not request.content.strip():
+        raise HTTPException(status_code=400, detail="Memory content cannot be empty")
+    
+    memory = memory_storage.add(
+        content=request.content.strip(),
+        source_conversation_id=request.source_conversation_id,
+        tags=request.tags
+    )
+    return {"memory": memory.to_dict()}
+
+
+@app.put("/api/memories/{memory_id}")
+async def update_memory(memory_id: str, request: UpdateMemoryRequest):
+    """Update an existing memory."""
+    if not request.content.strip():
+        raise HTTPException(status_code=400, detail="Memory content cannot be empty")
+    
+    memory = memory_storage.update(
+        memory_id=memory_id,
+        content=request.content.strip(),
+        tags=request.tags
+    )
+    if memory is None:
+        raise HTTPException(status_code=404, detail="Memory not found")
+    return {"memory": memory.to_dict()}
+
+
+@app.delete("/api/memories/{memory_id}")
+async def delete_memory(memory_id: str):
+    """Delete a memory."""
+    success = memory_storage.delete(memory_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Memory not found")
+    return {"success": True}
+
+
+@app.delete("/api/memories")
+async def clear_all_memories():
+    """Delete all memories."""
+    count = memory_storage.clear_all()
+    return {"success": True, "deleted_count": count}
 
 
 # Serve the web UI

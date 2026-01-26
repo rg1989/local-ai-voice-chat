@@ -133,6 +133,23 @@ export function useWebSocket({ onMessage, onOpen, onClose, onError }: UseWebSock
     sendJson({ type: 'set_wakeword_settings', ...settings });
   }, [sendJson]);
 
+  // Memory functions
+  const sendGetMemories = useCallback((query?: string) => {
+    sendJson({ type: 'get_memories', query: query || '' });
+  }, [sendJson]);
+
+  const sendAddMemory = useCallback((content: string, tags: string[]) => {
+    sendJson({ type: 'add_memory', content, tags });
+  }, [sendJson]);
+
+  const sendDeleteMemory = useCallback((memoryId: string) => {
+    sendJson({ type: 'delete_memory', memory_id: memoryId });
+  }, [sendJson]);
+
+  const sendUpdateMemory = useCallback((memoryId: string, content: string, tags: string[]) => {
+    sendJson({ type: 'update_memory', memory_id: memoryId, content, tags });
+  }, [sendJson]);
+
   useEffect(() => {
     connect();
     return () => disconnect();
@@ -155,5 +172,9 @@ export function useWebSocket({ onMessage, onOpen, onClose, onError }: UseWebSock
     sendSetGlobalRules,
     sendGetWakeWordSettings,
     sendSetWakeWordSettings,
+    sendGetMemories,
+    sendAddMemory,
+    sendDeleteMemory,
+    sendUpdateMemory,
   };
 }

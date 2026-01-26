@@ -107,6 +107,15 @@ export interface SearchResult {
   updated_at: string;
 }
 
+// Memory types (persistent cross-chat memories)
+export interface MemoryEntry {
+  id: string;
+  content: string;
+  created_at: string;
+  source_conversation_id: string | null;
+  tags: string[];
+}
+
 // WebSocket message types
 export interface WSStatusMessage {
   type: 'status';
@@ -157,6 +166,28 @@ export interface WSWakeStatusMessage {
   displayName: string;
 }
 
+export interface WSMemoriesListMessage {
+  type: 'memories_list';
+  memories: MemoryEntry[];
+  count: number;
+}
+
+export interface WSMemoryAddedMessage {
+  type: 'memory_added';
+  memory: MemoryEntry;
+}
+
+export interface WSMemoryDeletedMessage {
+  type: 'memory_deleted';
+  memory_id: string;
+  success: boolean;
+}
+
+export interface WSMemoryUpdatedMessage {
+  type: 'memory_updated';
+  memory: MemoryEntry;
+}
+
 export type WSMessage =
   | WSStatusMessage
   | WSTranscriptionMessage
@@ -165,4 +196,8 @@ export type WSMessage =
   | WSAudioMessage
   | WSToolsListMessage
   | WSWakeWordSettingsMessage
-  | WSWakeStatusMessage;
+  | WSWakeStatusMessage
+  | WSMemoriesListMessage
+  | WSMemoryAddedMessage
+  | WSMemoryDeletedMessage
+  | WSMemoryUpdatedMessage;

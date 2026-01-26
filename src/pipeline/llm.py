@@ -7,6 +7,7 @@ from typing import AsyncIterator, Iterator, Optional
 import httpx
 
 from ..config import settings
+from ..storage.memories import memory_storage
 from .tools import tool_registry, generate_tool_prompt
 from .tool_parser import tool_parser
 
@@ -122,12 +123,17 @@ class LLMClient:
 
     @property
     def system_prompt(self) -> str:
-        """Build the full system prompt with tools, global rules, and custom rules."""
+        """Build the full system prompt with tools, memories, global rules, and custom rules."""
         prompt = self._base_system_prompt
         
         # Add tool instructions if enabled
         if self.tools_enabled:
             prompt += generate_tool_prompt()
+        
+        # Add persistent memories (shared across all conversations)
+        memories_context = memory_storage.get_context_string()
+        if memories_context and memories_context != "No memories stored yet.":
+            prompt += f"\n\n## User Memories (persistent across all chats):\nThese are things the user has asked you to remember. Use this information to provide personalized responses:\n{memories_context}"
         
         # Add global rules if set (apply to all chats)
         if self._global_rules:

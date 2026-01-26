@@ -5,11 +5,12 @@ import { ChatMessages } from './components/ChatMessages';
 import { ControlBar } from './components/ControlBar';
 import { ChatSettingsModal } from './components/ChatSettingsModal';
 import { GlobalSettingsModal } from './components/GlobalSettingsModal';
+import { MemoryExplorerModal } from './components/MemoryExplorerModal';
 import { useWebSocket } from './hooks/useWebSocket';
 import { useAudioStream } from './hooks/useAudioStream';
 import { useConversations } from './hooks/useConversations';
 import { useSearch } from './hooks/useSearch';
-import { AppState, Message, WSMessage, ConversationSummary, MemoryUsage, ToolInfo, WakeWordSettings, SoundSettings } from './types';
+import { AppState, Message, WSMessage, ConversationSummary, MemoryUsage, ToolInfo, WakeWordSettings, SoundSettings, MemoryEntry } from './types';
 import { generateId } from './utils/audioUtils';
 import {
   playWakeSound,
@@ -146,6 +147,10 @@ function App() {
     }
     return DEFAULT_SOUND_SETTINGS;
   });
+  
+  // Memory explorer modal state
+  const [memoryModalOpen, setMemoryModalOpen] = useState(false);
+  const [memories, setMemories] = useState<MemoryEntry[]>([]);
   
   // Search functionality
   const {
@@ -338,10 +343,28 @@ function App() {
           displayName: message.displayName,
         });
         break;
+      case 'memories_list':
+        console.log('[Memory] Received memories list:', message.count);
+        setMemories(message.memories);
+        break;
+      case 'memory_added':
+        console.log('[Memory] Added:', message.memory.content.slice(0, 50));
+        setMemories(prev => [message.memory, ...prev]);
+        break;
+      case 'memory_deleted':
+        console.log('[Memory] Deleted:', message.memory_id, message.success);
+        if (message.success) {
+          setMemories(prev => prev.filter(m => m.id !== message.memory_id));
+        }
+        break;
+      case 'memory_updated':
+        console.log('[Memory] Updated:', message.memory.id);
+        setMemories(prev => prev.map(m => m.id === message.memory.id ? message.memory : m));
+        break;
     }
   }, []);
 
-  const { isConnected, sendBinary, sendTextMessage, sendStop, sendClearHistory, sendSetVoice, sendSetModel, sendSetConversation, sendSetTtsEnabled, sendSetCustomRules, sendGetTools, sendSetToolEnabled, sendSetGlobalRules, sendSetWakeWordSettings } =
+  const { isConnected, sendBinary, sendTextMessage, sendStop, sendClearHistory, sendSetVoice, sendSetModel, sendSetConversation, sendSetTtsEnabled, sendSetCustomRules, sendGetTools, sendSetToolEnabled, sendSetGlobalRules, sendSetWakeWordSettings, sendGetMemories, sendAddMemory, sendDeleteMemory, sendUpdateMemory } =
     useWebSocket({
       onMessage: handleMessage,
     });
@@ -766,6 +789,48 @@ function App() {
     setTimeout(() => setToast(null), 3000);
   }, [isConnected, sendSetGlobalRules, sendSetToolEnabled, sendSetWakeWordSettings]);
 
+  // Memory modal handlers
+  const handleOpenMemoryExplorer = useCallback(() => {
+    setMemoryModalOpen(true);
+    if (isConnected) {
+      sendGetMemories();
+    }
+  }, [isConnected, sendGetMemories]);
+
+  const handleCloseMemoryExplorer = useCallback(() => {
+    setMemoryModalOpen(false);
+  }, []);
+
+  const handleRefreshMemories = useCallback(() => {
+    if (isConnected) {
+      sendGetMemories();
+    }
+  }, [isConnected, sendGetMemories]);
+
+  const handleAddMemory = useCallback((content: string, tags: string[]) => {
+    if (isConnected) {
+      sendAddMemory(content, tags);
+      setToast({ message: 'Memory saved', type: 'success' });
+      setTimeout(() => setToast(null), 3000);
+    }
+  }, [isConnected, sendAddMemory]);
+
+  const handleDeleteMemory = useCallback((memoryId: string) => {
+    if (isConnected) {
+      sendDeleteMemory(memoryId);
+      setToast({ message: 'Memory deleted', type: 'success' });
+      setTimeout(() => setToast(null), 3000);
+    }
+  }, [isConnected, sendDeleteMemory]);
+
+  const handleUpdateMemory = useCallback((memoryId: string, content: string, tags: string[]) => {
+    if (isConnected) {
+      sendUpdateMemory(memoryId, content, tags);
+      setToast({ message: 'Memory updated', type: 'success' });
+      setTimeout(() => setToast(null), 3000);
+    }
+  }, [isConnected, sendUpdateMemory]);
+
   const handleToggleListening = useCallback(async () => {
     if (!ollamaStatus.available) return;
     
@@ -946,6 +1011,18 @@ function App() {
         onSaveSettings={handleSaveGlobalSettings}
       />
 
+      {/* Memory Explorer Modal */}
+      <MemoryExplorerModal
+        isOpen={memoryModalOpen}
+        onClose={handleCloseMemoryExplorer}
+        memories={memories}
+        conversations={conversations}
+        onAddMemory={handleAddMemory}
+        onDeleteMemory={handleDeleteMemory}
+        onUpdateMemory={handleUpdateMemory}
+        onRefresh={handleRefreshMemories}
+      />
+
       {/* Main Chat Area */}
       <main className="flex-1 flex flex-col min-w-0">
         <ChatHeader 
@@ -958,6 +1035,7 @@ function App() {
           wakeWordStatus={wakeWordStatus}
           onDisableWakeWord={handleDisableWakeWord}
           appState={state}
+          onOpenMemoryExplorer={handleOpenMemoryExplorer}
         />
 
         {/* Ollama error banner */}

@@ -70,10 +70,11 @@ class LLMSettings(BaseSettings):
     max_tokens: int = Field(default=512, description="Maximum tokens to generate")
     system_prompt: str = Field(
         default=(
-            "You are a helpful, friendly voice assistant. Keep responses concise and "
-            "conversational since they will be spoken aloud. Aim for 1-3 sentences "
-            "unless more detail is specifically requested. Respond directly without "
-            "any preamble or meta-commentary."
+            "You are a helpful, friendly assistant. Keep responses clear and well-structured. "
+            "When asked to create diagrams, flowcharts, or visualizations, use mermaid syntax "
+            "in a ```mermaid code block. When presenting tabular data, use markdown tables. "
+            "Use code blocks with language tags for code examples. Use bold, italic, and lists "
+            "for clarity when appropriate. Be concise but thorough."
         ),
         description="System prompt for the assistant",
     )

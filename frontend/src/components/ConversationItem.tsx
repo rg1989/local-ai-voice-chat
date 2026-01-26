@@ -121,15 +121,15 @@ export function ConversationItem({
   return (
     <div
       onClick={onSelect}
-      className={`group mx-2 px-3 py-3 rounded-xl cursor-pointer transition-all duration-200 ${
+      className={`group mx-2 px-3 py-2.5 rounded-xl cursor-pointer transition-all duration-200 ${
         isActive
           ? 'bg-slate-700/60 border border-slate-600/50'
           : 'hover:bg-slate-700/30 border border-transparent'
       }`}
     >
-      <div className="flex items-start gap-3">
+      <div className="flex items-center gap-3">
         {/* Avatar */}
-        <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
+        <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${
           isActive 
             ? 'bg-gradient-to-br from-emerald-500 to-teal-600' 
             : 'bg-slate-600'
@@ -139,62 +139,56 @@ export function ConversationItem({
 
         {/* Content */}
         <div className="flex-1 min-w-0">
-          <div className="flex items-center justify-between gap-2">
-            {isEditing ? (
-              <input
-                ref={inputRef}
-                type="text"
-                value={editTitle}
-                onChange={(e) => setEditTitle(e.target.value)}
-                onBlur={handleSave}
-                onKeyDown={handleKeyDown}
-                onClick={handleInputClick}
-                className="flex-1 text-sm font-medium bg-slate-800 border border-emerald-500/50 rounded px-2 py-0.5 text-white focus:outline-none focus:border-emerald-500 min-w-0"
-              />
-            ) : (
-              <h3 
-                onDoubleClick={handleDoubleClick}
-                className={`text-sm font-medium truncate ${
-                  isActive ? 'text-white' : 'text-slate-200'
-                }`}
-                title="Double-click to edit"
-              >
-                {conversation.title || 'New Conversation'}
-              </h3>
-            )}
-            <span className="text-xs text-slate-500 flex-shrink-0">
+          {/* Title row */}
+          {isEditing ? (
+            <input
+              ref={inputRef}
+              type="text"
+              value={editTitle}
+              onChange={(e) => setEditTitle(e.target.value)}
+              onBlur={handleSave}
+              onKeyDown={handleKeyDown}
+              onClick={handleInputClick}
+              className="w-full text-sm font-medium bg-slate-800 border border-emerald-500/50 rounded px-2 py-0.5 text-white focus:outline-none focus:border-emerald-500"
+            />
+          ) : (
+            <h3 
+              onDoubleClick={handleDoubleClick}
+              className={`text-sm font-medium truncate ${
+                isActive ? 'text-white' : 'text-slate-200'
+              }`}
+              title="Double-click to edit"
+            >
+              {conversation.title || 'New Conversation'}
+            </h3>
+          )}
+          
+          {/* Second row: timestamp and action buttons */}
+          <div className="flex items-center justify-between mt-0.5">
+            <span className="text-xs text-slate-500">
               {formatRelativeTime(conversation.last_message?.timestamp || conversation.created_at)}
             </span>
+            
+            {/* Action buttons - shown on hover */}
+            <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all">
+              {!isEditing && (
+                <button
+                  onClick={handleEdit}
+                  className="p-1 text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/10 rounded transition-all cursor-pointer"
+                  title="Rename conversation"
+                >
+                  <EditIcon />
+                </button>
+              )}
+              <button
+                onClick={handleDelete}
+                className="p-1 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded transition-all cursor-pointer"
+                title="Delete conversation"
+              >
+                <TrashIcon />
+              </button>
+            </div>
           </div>
-          
-          {conversation.last_message ? (
-            <p className="text-xs text-slate-400 truncate mt-1">
-              {conversation.last_message.role === 'user' ? 'You: ' : 'AI: '}
-              {conversation.last_message.preview}
-            </p>
-          ) : (
-            <p className="text-xs text-slate-500 italic mt-1">No messages yet</p>
-          )}
-        </div>
-
-        {/* Action buttons */}
-        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
-          {!isEditing && (
-            <button
-              onClick={handleEdit}
-              className="p-1.5 text-slate-400 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-lg transition-all cursor-pointer"
-              title="Rename conversation"
-            >
-              <EditIcon />
-            </button>
-          )}
-          <button
-            onClick={handleDelete}
-            className="p-1.5 text-slate-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all cursor-pointer"
-            title="Delete conversation"
-          >
-            <TrashIcon />
-          </button>
         </div>
       </div>
     </div>

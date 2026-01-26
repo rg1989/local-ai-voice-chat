@@ -1,6 +1,8 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Message } from '../types';
 import { ChatMessage } from './ChatMessage';
+import { MarkdownRenderer } from './MarkdownRenderer';
+import { formatTime } from '../utils/audioUtils';
 
 interface ChatMessagesProps {
   messages: Message[];
@@ -72,6 +74,33 @@ function EnvelopeIcon() {
   );
 }
 
+// Copy icon
+function CopyIcon() {
+  return (
+    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+    </svg>
+  );
+}
+
+// Download icon
+function DownloadIcon() {
+  return (
+    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+    </svg>
+  );
+}
+
+// Check icon
+function CheckIcon() {
+  return (
+    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+    </svg>
+  );
+}
+
 export function ChatMessages({ 
   messages, 
   streamingContent,
@@ -81,10 +110,50 @@ export function ChatMessages({
   isDisabled,
 }: ChatMessagesProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [copied, setCopied] = useState(false);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    scrollToBottom();
   }, [messages, streamingContent]);
+
+  // Format messages for export
+  const formatMessagesForExport = () => {
+    return messages.map(msg => {
+      const role = msg.role === 'user' ? 'User' : 'Assistant';
+      const time = formatTime(msg.timestamp);
+      return `${role} (${time}):\n${msg.content}\n`;
+    }).join('\n---\n\n');
+  };
+
+  // Copy entire chat to clipboard
+  const handleCopyChat = async () => {
+    try {
+      const text = formatMessagesForExport();
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy chat:', err);
+    }
+  };
+
+  // Download chat as markdown file
+  const handleDownloadChat = () => {
+    const text = formatMessagesForExport();
+    const blob = new Blob([text], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `chat-${new Date().toISOString().split('T')[0]}.md`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <div className="flex-1 flex flex-col bg-[#15181c] relative overflow-hidden">
@@ -100,19 +169,45 @@ export function ChatMessages({
         </div>
       )}
 
-      {/* Floating Clear Chat button - fixed position relative to container */}
+      {/* Floating action buttons - fixed position relative to container */}
       {messages.length > 0 && (
-        <button
-          onClick={onClearChat}
-          className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 opacity-40 hover:opacity-100 
-                     px-3 py-1.5 text-xs text-slate-400 hover:text-red-400 
-                     bg-slate-800/80 hover:bg-slate-800 backdrop-blur-sm
-                     border border-slate-700/50 hover:border-red-500/50 
-                     rounded-full transition-all duration-200 flex items-center gap-1.5 cursor-pointer"
-        >
-          <TrashIcon />
-          Clear Chat
-        </button>
+        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2">
+          {/* Copy Chat button */}
+          <button
+            onClick={handleCopyChat}
+            className="opacity-40 hover:opacity-100 px-3 py-1.5 text-xs text-slate-400 hover:text-emerald-400 
+                       bg-slate-800/80 hover:bg-slate-800 backdrop-blur-sm
+                       border border-slate-700/50 hover:border-emerald-500/50 
+                       rounded-full transition-all duration-200 flex items-center gap-1.5 cursor-pointer"
+          >
+            {copied ? <CheckIcon /> : <CopyIcon />}
+            {copied ? 'Copied!' : 'Copy Chat'}
+          </button>
+
+          {/* Download Chat button */}
+          <button
+            onClick={handleDownloadChat}
+            className="opacity-40 hover:opacity-100 px-3 py-1.5 text-xs text-slate-400 hover:text-blue-400 
+                       bg-slate-800/80 hover:bg-slate-800 backdrop-blur-sm
+                       border border-slate-700/50 hover:border-blue-500/50 
+                       rounded-full transition-all duration-200 flex items-center gap-1.5 cursor-pointer"
+          >
+            <DownloadIcon />
+            Download
+          </button>
+
+          {/* Clear Chat button */}
+          <button
+            onClick={onClearChat}
+            className="opacity-40 hover:opacity-100 px-3 py-1.5 text-xs text-slate-400 hover:text-red-400 
+                       bg-slate-800/80 hover:bg-slate-800 backdrop-blur-sm
+                       border border-slate-700/50 hover:border-red-500/50 
+                       rounded-full transition-all duration-200 flex items-center gap-1.5 cursor-pointer"
+          >
+            <TrashIcon />
+            Clear
+          </button>
+        </div>
       )}
 
       {/* Scrollable content area */}
@@ -151,7 +246,7 @@ export function ChatMessages({
 
           {messages.map((message, index) => (
             <div key={message.id} className="animate-fade-in" style={{ animationDelay: `${index * 50}ms` }}>
-              <ChatMessage message={message} />
+              <ChatMessage message={message} onContentChange={scrollToBottom} />
             </div>
           ))}
 
@@ -160,10 +255,10 @@ export function ChatMessages({
               <StreamingBotAvatar />
               <div className="flex flex-col items-start max-w-[75%]">
                 <div className="rounded-2xl rounded-tl-md px-4 py-3 shadow-md bg-[#2a2d32] text-slate-100 border border-slate-700/50">
-                  <p className="text-sm leading-relaxed whitespace-pre-wrap">
-                    {streamingContent}
-                    <span className="inline-block w-2 h-4 bg-emerald-500 ml-1 animate-pulse rounded-sm" />
-                  </p>
+                  <div className="relative">
+                    <MarkdownRenderer content={streamingContent} isStreaming={true} onContentChange={scrollToBottom} />
+                    <span className="inline-block w-2 h-4 bg-emerald-500 ml-1 animate-pulse rounded-sm align-middle" />
+                  </div>
                 </div>
               </div>
             </div>

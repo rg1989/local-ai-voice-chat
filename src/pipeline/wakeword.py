@@ -132,8 +132,15 @@ class WakeWordDetector:
                 print(f"[WAKEWORD] Loaded models: {list(self._oww_model.models.keys())}")
             print(f"[WAKEWORD] Model loaded successfully")
             return True
-        except ImportError:
-            print("[WAKEWORD] OpenWakeWord is not installed")
+        except ImportError as e:
+            import sys
+            if sys.platform == "linux":
+                print("[WAKEWORD] OpenWakeWord not available on Linux (tflite-runtime issue)")
+                print("[WAKEWORD] Wake word detection disabled. Use Python 3.11 or disable wake word.")
+            else:
+                print(f"[WAKEWORD] OpenWakeWord is not installed: {e}")
+            self.enabled = False
+            self._state = WakeWordState.DISABLED
             return False
         except Exception as e:
             print(f"[WAKEWORD] Failed to load model: {e}")

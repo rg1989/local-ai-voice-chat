@@ -55,6 +55,7 @@ from ..pipeline.stt import SpeechToText
 from ..pipeline.tts import TextToSpeech
 from ..pipeline.vad import SpeechState, VoiceActivityDetector
 from ..pipeline.wakeword import WakeWordDetector, WakeWordState
+from ..pipeline.tts_markdown_filter import TTSMarkdownFilter
 
 # Create FastAPI app
 app = FastAPI(
@@ -232,6 +233,7 @@ class VoiceChatSession:
             
         self.llm = LLMClient()
         self.sentencizer = StreamingSentencizer()
+        self.tts_filter = TTSMarkdownFilter()
 
         self._audio_buffer: list[np.ndarray] = []
         self._is_speaking = False
@@ -546,6 +548,7 @@ class VoiceChatSession:
             await self.send_status("thinking")
 
             self.sentencizer.reset()
+            self.tts_filter.reset()  # Reset markdown filter for new response
             full_response = []
             cancelled = False
             llm_start = time.time()
@@ -677,6 +680,16 @@ class VoiceChatSession:
                 # Partial fragment - skip entirely
                 return
         
+        # Filter markdown for TTS (code blocks, diagrams, formatting)
+        # This removes elements that shouldn't be spoken aloud
+        filtered_text = self.tts_filter.filter_for_tts(text)
+        if not filtered_text:
+            print(f"[TTS-FILTER] Skipped (in code block or empty): {text[:80]}...")
+            return  # Skip entirely (e.g., inside code block)
+        if filtered_text != text:
+            print(f"[TTS-FILTER] Filtered: '{text[:50]}...' -> '{filtered_text[:50]}...'")
+        text = filtered_text
+        
         if not text.strip():
             return
         
@@ -737,6 +750,7 @@ class VoiceChatSession:
             await self.send_status("thinking")
 
             self.sentencizer.reset()
+            self.tts_filter.reset()  # Reset markdown filter for new response
             cancelled = False
             full_response = []
             llm_start = time.time()
@@ -886,6 +900,7 @@ class VoiceChatSession:
         tool_message = f"TOOL RESULT (this is the REAL, ACCURATE data - you MUST use it exactly):\n\n{tool_results}\n\nRespond to the user using ONLY the information above. Do NOT use your training data. Do NOT guess. Just state the facts from the tool result. Do not output another tool call."
         
         self.sentencizer.reset()
+        self.tts_filter.reset()  # Reset markdown filter for new response
         full_response = []
         
         # Stream the follow-up response

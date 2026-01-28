@@ -375,7 +375,6 @@ export function MemoryExplorerModal({
             <div className="flex items-center gap-3">
               {/* Search */}
               <div className="flex-1 relative">
-                <SearchIcon />
                 <input
                   type="text"
                   value={searchQuery}

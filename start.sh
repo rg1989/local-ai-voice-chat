@@ -17,6 +17,21 @@ NC='\033[0m' # No Color
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# Detect OS
+detect_os() {
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        echo "macos"
+    elif [[ -f /etc/debian_version ]]; then
+        echo "debian"
+    elif [[ -f /etc/redhat-release ]]; then
+        echo "redhat"
+    else
+        echo "linux"
+    fi
+}
+
+OS_TYPE=$(detect_os)
+
 # Cleanup function
 cleanup() {
     echo ""
@@ -47,6 +62,91 @@ echo "╚═══════════════════════�
 echo -e "${NC}"
 
 # ============================================
+# Step 0: Check Prerequisites
+# ============================================
+echo -e "${BLUE}[0/5]${NC} Checking prerequisites..."
+
+MISSING_DEPS=""
+
+# Check for Python 3.10+
+if ! command -v python3 &> /dev/null; then
+    MISSING_DEPS="${MISSING_DEPS}\n  - Python 3.10+ is not installed"
+else
+    PYTHON_VERSION=$(python3 -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
+    PYTHON_MAJOR=$(echo $PYTHON_VERSION | cut -d. -f1)
+    PYTHON_MINOR=$(echo $PYTHON_VERSION | cut -d. -f2)
+    if [ "$PYTHON_MAJOR" -lt 3 ] || ([ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR" -lt 10 ]); then
+        MISSING_DEPS="${MISSING_DEPS}\n  - Python 3.10+ required (found $PYTHON_VERSION)"
+    fi
+fi
+
+# Check for python3-venv (common issue on Debian/Ubuntu)
+if command -v python3 &> /dev/null; then
+    if ! python3 -c "import venv" 2>/dev/null; then
+        MISSING_DEPS="${MISSING_DEPS}\n  - Python venv module not installed"
+    fi
+fi
+
+# Check for Node.js
+if ! command -v node &> /dev/null; then
+    MISSING_DEPS="${MISSING_DEPS}\n  - Node.js is not installed"
+else
+    NODE_VERSION=$(node -v | sed 's/v//' | cut -d. -f1)
+    if [ "$NODE_VERSION" -lt 18 ]; then
+        MISSING_DEPS="${MISSING_DEPS}\n  - Node.js 18+ required (found v$NODE_VERSION)"
+    fi
+fi
+
+# Check for npm
+if ! command -v npm &> /dev/null; then
+    MISSING_DEPS="${MISSING_DEPS}\n  - npm is not installed"
+fi
+
+# If there are missing dependencies, show instructions and exit
+if [ -n "$MISSING_DEPS" ]; then
+    echo -e "${RED}  ✗ Missing dependencies:${NC}"
+    echo -e "$MISSING_DEPS"
+    echo ""
+    echo -e "${YELLOW}Installation instructions:${NC}"
+    echo ""
+    
+    if [[ "$OS_TYPE" == "macos" ]]; then
+        echo "  # Install Homebrew (if not installed):"
+        echo "  /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
+        echo ""
+        echo "  # Install Python and Node.js:"
+        echo "  brew install python@3.11 node"
+        echo ""
+    elif [[ "$OS_TYPE" == "debian" ]]; then
+        echo "  # Update package list:"
+        echo "  sudo apt update"
+        echo ""
+        echo "  # Install Python with venv support:"
+        echo "  sudo apt install -y python3 python3-venv python3-pip"
+        echo ""
+        echo "  # Install Node.js 20.x:"
+        echo "  curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -"
+        echo "  sudo apt install -y nodejs"
+        echo ""
+    elif [[ "$OS_TYPE" == "redhat" ]]; then
+        echo "  # Install Python:"
+        echo "  sudo dnf install -y python3 python3-pip"
+        echo ""
+        echo "  # Install Node.js:"
+        echo "  sudo dnf install -y nodejs npm"
+        echo ""
+    else
+        echo "  Please install Python 3.10+ and Node.js 18+ for your distribution."
+        echo ""
+    fi
+    
+    echo -e "After installing dependencies, run ${GREEN}./start.sh${NC} again."
+    exit 1
+fi
+
+echo -e "${GREEN}  ✓ All prerequisites installed${NC}"
+
+# ============================================
 # Step 1: Check/Setup Python Environment
 # ============================================
 echo -e "${BLUE}[1/5]${NC} Checking Python environment..."
@@ -54,18 +154,31 @@ echo -e "${BLUE}[1/5]${NC} Checking Python environment..."
 if [ ! -d ".venv" ]; then
     echo -e "${YELLOW}  → Creating Python virtual environment...${NC}"
     
-    # Check for uv
+    # Check for uv (faster package manager)
     if command -v uv &> /dev/null; then
         uv venv
         source .venv/bin/activate
+        echo -e "${YELLOW}  → Installing Python dependencies (using uv)...${NC}"
         uv pip install -e .
     else
         python3 -m venv .venv
+        if [ ! -f ".venv/bin/activate" ]; then
+            echo -e "${RED}  ✗ Failed to create virtual environment${NC}"
+            echo "    Try: python3 -m venv .venv"
+            exit 1
+        fi
         source .venv/bin/activate
+        echo -e "${YELLOW}  → Installing Python dependencies (this may take a few minutes)...${NC}"
+        pip install --upgrade pip
         pip install -e .
     fi
     echo -e "${GREEN}  ✓ Python environment created${NC}"
 else
+    if [ ! -f ".venv/bin/activate" ]; then
+        echo -e "${RED}  ✗ Virtual environment is corrupted. Removing and recreating...${NC}"
+        rm -rf .venv
+        exec "$0" "$@"  # Restart the script
+    fi
     source .venv/bin/activate
     echo -e "${GREEN}  ✓ Python environment activated${NC}"
 fi

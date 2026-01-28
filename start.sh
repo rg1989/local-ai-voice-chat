@@ -102,16 +102,24 @@ if ! command -v npm &> /dev/null; then
     MISSING_DEPS="${MISSING_DEPS}\n  - npm is not installed"
 fi
 
-# Check for PortAudio on Linux (required by sounddevice)
+# Check for Linux audio/TTS dependencies
 if [[ "$OS_TYPE" == "debian" ]] || [[ "$OS_TYPE" == "linux" ]]; then
+    # PortAudio (required by sounddevice)
     if ! ldconfig -p 2>/dev/null | grep -q libportaudio; then
         if ! dpkg -l 2>/dev/null | grep -q portaudio19-dev; then
             MISSING_DEPS="${MISSING_DEPS}\n  - PortAudio library not installed (required for audio)"
         fi
     fi
+    # espeak-ng (required by Kokoro TTS for text processing)
+    if ! command -v espeak-ng &> /dev/null; then
+        MISSING_DEPS="${MISSING_DEPS}\n  - espeak-ng not installed (required for TTS)"
+    fi
 elif [[ "$OS_TYPE" == "redhat" ]]; then
     if ! ldconfig -p 2>/dev/null | grep -q libportaudio; then
         MISSING_DEPS="${MISSING_DEPS}\n  - PortAudio library not installed (required for audio)"
+    fi
+    if ! command -v espeak-ng &> /dev/null; then
+        MISSING_DEPS="${MISSING_DEPS}\n  - espeak-ng not installed (required for TTS)"
     fi
 fi
 
@@ -134,16 +142,16 @@ if [ -n "$MISSING_DEPS" ]; then
         echo "  # Update package list:"
         echo "  sudo apt update"
         echo ""
-        echo "  # Install Python with venv support and audio libraries:"
-        echo "  sudo apt install -y python3 python3-venv python3-pip portaudio19-dev"
+        echo "  # Install Python with venv support, audio libraries, and TTS dependencies:"
+        echo "  sudo apt install -y python3 python3-venv python3-pip portaudio19-dev espeak-ng ffmpeg"
         echo ""
         echo "  # Install Node.js 20.x:"
         echo "  curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -"
         echo "  sudo apt install -y nodejs"
         echo ""
     elif [[ "$OS_TYPE" == "redhat" ]]; then
-        echo "  # Install Python and audio libraries:"
-        echo "  sudo dnf install -y python3 python3-pip portaudio-devel"
+        echo "  # Install Python, audio libraries, and TTS dependencies:"
+        echo "  sudo dnf install -y python3 python3-pip portaudio-devel espeak-ng ffmpeg"
         echo ""
         echo "  # Install Node.js:"
         echo "  sudo dnf install -y nodejs npm"

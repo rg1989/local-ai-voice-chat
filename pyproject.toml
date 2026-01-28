@@ -14,8 +14,11 @@ dependencies = [
     "torch>=2.4.0",
     "torchaudio>=2.4.0",
     
-    # STT - using mlx-whisper (optimized for Apple Silicon)
-    "mlx-whisper>=0.4.0",
+    # STT - platform-specific backends
+    # macOS: MLX Whisper (optimized for Apple Silicon, ~2x faster)
+    "mlx-whisper>=0.4.0; sys_platform == 'darwin'",
+    # Linux: faster-whisper (CTranslate2 backend, works with CPU/CUDA)
+    "faster-whisper>=1.0.0; sys_platform == 'linux'",
     "numba>=0.59.0",  # Required for Python 3.12 compatibility
     "llvmlite>=0.42.0",  # Required for Python 3.12 compatibility
     

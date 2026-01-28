@@ -1,9 +1,13 @@
-"""Speech-to-Text using MLX Whisper (optimized for Apple Silicon)."""
+"""Speech-to-Text with cross-platform support.
+
+Uses MLX Whisper on macOS (Apple Silicon) and faster-whisper on Linux.
+"""
 
 from dataclasses import dataclass
 from typing import AsyncIterator, Optional
 import tempfile
 import os
+import sys
 
 import numpy as np
 from scipy.io import wavfile
@@ -21,20 +25,35 @@ class TranscriptionResult:
     duration_seconds: float
 
 
+# Detect platform for backend selection
+IS_MACOS = sys.platform == "darwin"
+IS_LINUX = sys.platform == "linux"
+
+
 class SpeechToText:
-    """Transcribes speech using MLX Whisper (optimized for Apple Silicon).
+    """Transcribes speech using the best available backend.
     
-    MLX Whisper is ~2x faster than faster-whisper on Apple Silicon Macs.
+    - macOS: MLX Whisper (optimized for Apple Silicon, ~2x faster)
+    - Linux: faster-whisper (CTranslate2 backend, works with CPU/CUDA)
     """
 
-    # Available models on Hugging Face (mlx-community)
-    MODELS = {
+    # Available models - maps to appropriate backend models
+    MODELS_MLX = {
         "mlx-community/whisper-tiny": "Fastest, least accurate (~74MB)",
         "mlx-community/whisper-base": "Fast, decent accuracy (~140MB)",
         "mlx-community/whisper-small": "Good balance (~460MB)",
         "mlx-community/whisper-medium": "High accuracy (~1.5GB)",
         "mlx-community/whisper-large-v3": "Best accuracy (~3GB)",
         "mlx-community/whisper-large-v3-turbo": "Fast and accurate, recommended (~1.5GB)",
+    }
+    
+    MODELS_FASTER_WHISPER = {
+        "tiny": "Fastest, least accurate (~74MB)",
+        "base": "Fast, decent accuracy (~140MB)",
+        "small": "Good balance (~460MB)",
+        "medium": "High accuracy (~1.5GB)",
+        "large-v3": "Best accuracy (~3GB)",
+        "large-v3-turbo": "Fast and accurate, recommended (~1.5GB)",
     }
 
     def __init__(
@@ -45,29 +64,86 @@ class SpeechToText:
         """Initialize STT.
 
         Args:
-            model_name: MLX Whisper model path or HuggingFace repo
+            model_name: Model name (auto-converted for platform)
             language: Language code for transcription
         """
         self.model_name = model_name or settings.stt.model_name
         self.language = language or settings.stt.language
         self.condition_on_previous_text = settings.stt.condition_on_previous_text
 
+        self._backend = None  # 'mlx' or 'faster_whisper'
+        self._model = None
+        self._mlx_whisper = None
         self._loaded = False
 
+    def _get_model_for_backend(self) -> str:
+        """Convert model name for the current backend."""
+        if self._backend == "mlx":
+            # Already MLX format or convert
+            if self.model_name.startswith("mlx-community/"):
+                return self.model_name
+            # Convert short name to MLX format
+            return f"mlx-community/whisper-{self.model_name}"
+        else:
+            # faster-whisper uses short names
+            if self.model_name.startswith("mlx-community/whisper-"):
+                return self.model_name.replace("mlx-community/whisper-", "")
+            return self.model_name
+
     def _ensure_loaded(self) -> None:
-        """Verify mlx_whisper is available (model loads on first use)."""
+        """Load the appropriate backend for the platform."""
         if self._loaded:
             return
 
+        # Try MLX Whisper first (macOS)
+        if IS_MACOS:
+            try:
+                import mlx_whisper
+                self._mlx_whisper = mlx_whisper
+                self._backend = "mlx"
+                self._loaded = True
+                print(f"[STT] Using MLX Whisper with model: {self._get_model_for_backend()}")
+                return
+            except ImportError:
+                print("[STT] MLX Whisper not available, trying faster-whisper...")
+
+        # Try faster-whisper (Linux or fallback)
         try:
-            import mlx_whisper
-            self._mlx_whisper = mlx_whisper
+            from faster_whisper import WhisperModel
+            model_name = self._get_model_for_backend()
+            
+            # Determine compute type based on available hardware
+            import torch
+            if torch.cuda.is_available():
+                device = "cuda"
+                compute_type = "float16"
+                print(f"[STT] Using faster-whisper with CUDA acceleration")
+            else:
+                device = "cpu"
+                compute_type = "int8"
+                print(f"[STT] Using faster-whisper with CPU (int8)")
+            
+            self._model = WhisperModel(
+                model_name,
+                device=device,
+                compute_type=compute_type,
+            )
+            self._backend = "faster_whisper"
             self._loaded = True
-            print(f"MLX Whisper ready with model: {self.model_name}")
-        except ImportError as e:
+            print(f"[STT] Loaded faster-whisper model: {model_name}")
+            return
+        except ImportError:
+            pass
+
+        # No backend available
+        if IS_MACOS:
             raise ImportError(
-                "mlx-whisper is required for STT. Install with: pip install mlx-whisper"
-            ) from e
+                "No STT backend available. Install mlx-whisper: pip install mlx-whisper"
+            )
+        else:
+            raise ImportError(
+                "No STT backend available. Install faster-whisper: pip install faster-whisper"
+            )
 
     def transcribe(
         self,
@@ -98,6 +174,13 @@ class SpeechToText:
         # Calculate duration
         duration = len(audio) / 16000
 
+        if self._backend == "mlx":
+            return self._transcribe_mlx(audio, duration)
+        else:
+            return self._transcribe_faster_whisper(audio, duration)
+
+    def _transcribe_mlx(self, audio: np.ndarray, duration: float) -> TranscriptionResult:
+        """Transcribe using MLX Whisper."""
         # MLX Whisper requires audio file path, so write to temp file
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
             temp_path = f.name
@@ -106,11 +189,9 @@ class SpeechToText:
             wavfile.write(temp_path, 16000, audio_int16)
 
         try:
-            # Transcribe using MLX Whisper
-            # Note: beam_size is not supported in mlx-whisper (greedy decoding only)
             result = self._mlx_whisper.transcribe(
                 temp_path,
-                path_or_hf_repo=self.model_name,
+                path_or_hf_repo=self._get_model_for_backend(),
                 language=self.language,
                 condition_on_previous_text=self.condition_on_previous_text,
             )
@@ -121,12 +202,34 @@ class SpeechToText:
             return TranscriptionResult(
                 text=text,
                 language=language,
-                confidence=1.0,  # MLX Whisper doesn't provide confidence
+                confidence=1.0,
                 duration_seconds=duration,
             )
         finally:
-            # Clean up temp file
             os.unlink(temp_path)
+
+    def _transcribe_faster_whisper(self, audio: np.ndarray, duration: float) -> TranscriptionResult:
+        """Transcribe using faster-whisper."""
+        segments, info = self._model.transcribe(
+            audio,
+            language=self.language,
+            condition_on_previous_text=self.condition_on_previous_text,
+            vad_filter=True,  # Use VAD to filter silence
+        )
+
+        # Collect all segments
+        text_parts = []
+        for segment in segments:
+            text_parts.append(segment.text)
+
+        text = "".join(text_parts).strip()
+
+        return TranscriptionResult(
+            text=text,
+            language=info.language,
+            confidence=info.language_probability,
+            duration_seconds=duration,
+        )
 
     async def transcribe_async(
         self,

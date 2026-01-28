@@ -123,46 +123,85 @@ elif [[ "$OS_TYPE" == "redhat" ]]; then
     fi
 fi
 
-# If there are missing dependencies, show instructions and exit
+# If there are missing dependencies, offer to install them
 if [ -n "$MISSING_DEPS" ]; then
     echo -e "${RED}  ✗ Missing dependencies:${NC}"
     echo -e "$MISSING_DEPS"
     echo ""
-    echo -e "${YELLOW}Installation instructions:${NC}"
-    echo ""
     
-    if [[ "$OS_TYPE" == "macos" ]]; then
-        echo "  # Install Homebrew (if not installed):"
-        echo "  /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
-        echo ""
-        echo "  # Install Python and Node.js:"
-        echo "  brew install python@3.11 node"
-        echo ""
-    elif [[ "$OS_TYPE" == "debian" ]]; then
-        echo "  # Update package list:"
-        echo "  sudo apt update"
-        echo ""
-        echo "  # Install Python with venv support, audio libraries, and TTS dependencies:"
-        echo "  sudo apt install -y python3 python3-venv python3-pip portaudio19-dev espeak-ng ffmpeg"
-        echo ""
-        echo "  # Install Node.js 20.x:"
-        echo "  curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -"
-        echo "  sudo apt install -y nodejs"
-        echo ""
+    # Check if we can auto-install
+    CAN_AUTO_INSTALL=false
+    INSTALL_CMD=""
+    
+    if [[ "$OS_TYPE" == "debian" ]]; then
+        CAN_AUTO_INSTALL=true
+        INSTALL_CMD="sudo apt update && sudo apt install -y python3 python3-venv python3-pip portaudio19-dev espeak-ng ffmpeg"
+        # Check if Node.js is missing and add it
+        if ! command -v node &> /dev/null; then
+            INSTALL_CMD="$INSTALL_CMD && curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - && sudo apt install -y nodejs"
+        fi
     elif [[ "$OS_TYPE" == "redhat" ]]; then
-        echo "  # Install Python, audio libraries, and TTS dependencies:"
-        echo "  sudo dnf install -y python3 python3-pip portaudio-devel espeak-ng ffmpeg"
-        echo ""
-        echo "  # Install Node.js:"
-        echo "  sudo dnf install -y nodejs npm"
-        echo ""
-    else
-        echo "  Please install Python 3.10+, Node.js 18+, and PortAudio for your distribution."
-        echo ""
+        CAN_AUTO_INSTALL=true
+        INSTALL_CMD="sudo dnf install -y python3 python3-pip portaudio-devel espeak-ng ffmpeg nodejs npm"
     fi
     
-    echo -e "After installing dependencies, run ${GREEN}./start.sh${NC} again."
-    exit 1
+    if [[ "$CAN_AUTO_INSTALL" == true ]]; then
+        echo -e "${YELLOW}Would you like to install missing dependencies automatically? (requires sudo)${NC}"
+        echo ""
+        read -p "Install now? [Y/n] " -n 1 -r
+        echo ""
+        
+        if [[ $REPLY =~ ^[Yy]$ ]] || [[ -z $REPLY ]]; then
+            echo -e "${BLUE}  → Installing dependencies...${NC}"
+            eval $INSTALL_CMD
+            if [ $? -eq 0 ]; then
+                echo -e "${GREEN}  ✓ Dependencies installed successfully${NC}"
+                echo ""
+                echo -e "${YELLOW}Restarting setup...${NC}"
+                echo ""
+                exec "$0" "$@"  # Restart the script
+            else
+                echo -e "${RED}  ✗ Installation failed. Please install manually.${NC}"
+                exit 1
+            fi
+        else
+            echo ""
+            echo -e "${YELLOW}Manual installation instructions:${NC}"
+            echo ""
+            if [[ "$OS_TYPE" == "debian" ]]; then
+                echo "  sudo apt update"
+                echo "  sudo apt install -y python3 python3-venv python3-pip portaudio19-dev espeak-ng ffmpeg"
+                if ! command -v node &> /dev/null; then
+                    echo "  curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -"
+                    echo "  sudo apt install -y nodejs"
+                fi
+            elif [[ "$OS_TYPE" == "redhat" ]]; then
+                echo "  sudo dnf install -y python3 python3-pip portaudio-devel espeak-ng ffmpeg nodejs npm"
+            fi
+            echo ""
+            echo -e "After installing, run ${GREEN}./start.sh${NC} again."
+            exit 1
+        fi
+    else
+        # macOS or unknown - show manual instructions
+        echo -e "${YELLOW}Installation instructions:${NC}"
+        echo ""
+        
+        if [[ "$OS_TYPE" == "macos" ]]; then
+            echo "  # Install Homebrew (if not installed):"
+            echo "  /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
+            echo ""
+            echo "  # Install Python and Node.js:"
+            echo "  brew install python@3.11 node"
+            echo ""
+        else
+            echo "  Please install Python 3.10+, Node.js 18+, PortAudio, espeak-ng, and ffmpeg for your distribution."
+            echo ""
+        fi
+        
+        echo -e "After installing dependencies, run ${GREEN}./start.sh${NC} again."
+        exit 1
+    fi
 fi
 
 echo -e "${GREEN}  ✓ All prerequisites installed${NC}"

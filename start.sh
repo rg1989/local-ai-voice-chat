@@ -102,6 +102,19 @@ if ! command -v npm &> /dev/null; then
     MISSING_DEPS="${MISSING_DEPS}\n  - npm is not installed"
 fi
 
+# Check for PortAudio on Linux (required by sounddevice)
+if [[ "$OS_TYPE" == "debian" ]] || [[ "$OS_TYPE" == "linux" ]]; then
+    if ! ldconfig -p 2>/dev/null | grep -q libportaudio; then
+        if ! dpkg -l 2>/dev/null | grep -q portaudio19-dev; then
+            MISSING_DEPS="${MISSING_DEPS}\n  - PortAudio library not installed (required for audio)"
+        fi
+    fi
+elif [[ "$OS_TYPE" == "redhat" ]]; then
+    if ! ldconfig -p 2>/dev/null | grep -q libportaudio; then
+        MISSING_DEPS="${MISSING_DEPS}\n  - PortAudio library not installed (required for audio)"
+    fi
+fi
+
 # If there are missing dependencies, show instructions and exit
 if [ -n "$MISSING_DEPS" ]; then
     echo -e "${RED}  ✗ Missing dependencies:${NC}"
@@ -121,22 +134,22 @@ if [ -n "$MISSING_DEPS" ]; then
         echo "  # Update package list:"
         echo "  sudo apt update"
         echo ""
-        echo "  # Install Python with venv support:"
-        echo "  sudo apt install -y python3 python3-venv python3-pip"
+        echo "  # Install Python with venv support and audio libraries:"
+        echo "  sudo apt install -y python3 python3-venv python3-pip portaudio19-dev"
         echo ""
         echo "  # Install Node.js 20.x:"
         echo "  curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -"
         echo "  sudo apt install -y nodejs"
         echo ""
     elif [[ "$OS_TYPE" == "redhat" ]]; then
-        echo "  # Install Python:"
-        echo "  sudo dnf install -y python3 python3-pip"
+        echo "  # Install Python and audio libraries:"
+        echo "  sudo dnf install -y python3 python3-pip portaudio-devel"
         echo ""
         echo "  # Install Node.js:"
         echo "  sudo dnf install -y nodejs npm"
         echo ""
     else
-        echo "  Please install Python 3.10+ and Node.js 18+ for your distribution."
+        echo "  Please install Python 3.10+, Node.js 18+, and PortAudio for your distribution."
         echo ""
     fi
     
